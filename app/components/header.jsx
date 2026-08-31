@@ -65,7 +65,6 @@ export default function Header({
                   style={styles.logo}
                   resizeMode="contain"
                 />
-                <Text style={styles.brandText}>Klaso</Text>
               </View>
             )}
 
@@ -128,8 +127,8 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   logo: {
-    height: 26,
-    width: 60,
+    height: 46,
+    width: 80,
   },
   brandText: {
     color: '#14351D',
