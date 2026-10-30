@@ -1,0 +1,1597 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Klaso - Interactive App Preview</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  <style>
+    :root {
+      --primary: #15803D;
+      --primary-dark: #14351D;
+      --primary-light: #E8F5E9;
+      --primary-mint: #F0FDF4;
+      --accent-blue: #57a0ff;
+      --bg: #F5FAF5;
+      --card-bg: #FFFFFF;
+      --text-main: #14351D;
+      --text-muted: #718178;
+      --border: #E8EFEA;
+      --star-color: #F59E0B;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background: #0D1B11;
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* Device Mockup Shell */
+    .device-wrapper {
+      width: 100%;
+      max-width: 430px;
+      height: 100vh;
+      max-height: 900px;
+      background: #FFFFFF;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      overflow: hidden;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.4);
+    }
+
+    @media (min-width: 450px) {
+      .device-wrapper {
+        height: 880px;
+        border-radius: 42px;
+        border: 10px solid #1A2E20;
+      }
+    }
+
+    /* Mobile Status Bar */
+    .status-bar {
+      height: 38px;
+      background: #FFFFFF;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 24px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--text-main);
+      z-index: 100;
+    }
+
+    .status-icons {
+      display: flex;
+      gap: 6px;
+      font-size: 11px;
+    }
+
+    /* Header Nav */
+    .app-header {
+      padding: 10px 18px 12px;
+      background: #FFFFFF;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 90;
+    }
+
+    .brand-title {
+      font-size: 20px;
+      font-weight: 900;
+      color: var(--primary-dark);
+      letter-spacing: -0.5px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .brand-badge {
+      font-size: 10px;
+      font-weight: 800;
+      background: var(--primary-light);
+      color: var(--primary);
+      padding: 2px 7px;
+      border-radius: 6px;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 12px;
+    }
+
+    .icon-btn {
+      width: 36px;
+      height: 36px;
+      border-radius: 18px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: var(--primary-dark);
+      cursor: pointer;
+      position: relative;
+    }
+
+    .notif-dot {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 8px;
+      height: 8px;
+      background: #EF4444;
+      border-radius: 50%;
+      border: 2px solid #FFFFFF;
+    }
+
+    /* Main Scrollable Views */
+    .app-body {
+      flex: 1;
+      overflow-y: auto;
+      background: var(--bg);
+      padding-bottom: 90px;
+      position: relative;
+    }
+
+    .screen-view {
+      display: none;
+      padding: 16px;
+      animation: fadeIn 0.25s ease;
+    }
+
+    .screen-view.active {
+      display: block;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(6px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* Hero Banner */
+    .hero-card {
+      background: linear-gradient(135deg, #14351D 0%, #15803D 100%);
+      border-radius: 20px;
+      padding: 20px;
+      color: #FFFFFF;
+      position: relative;
+      overflow: hidden;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 24px rgba(20, 53, 29, 0.2);
+    }
+
+    .hero-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: rgba(255, 255, 255, 0.18);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .hero-title {
+      font-size: 21px;
+      font-weight: 800;
+      line-height: 1.25;
+      margin-bottom: 8px;
+    }
+
+    .hero-sub {
+      font-size: 13px;
+      opacity: 0.88;
+      line-height: 1.4;
+      margin-bottom: 16px;
+    }
+
+    .hero-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: #FFFFFF;
+      color: var(--primary-dark);
+      padding: 10px 18px;
+      border-radius: 12px;
+      font-size: 13px;
+      font-weight: 800;
+      cursor: pointer;
+      border: none;
+    }
+
+    /* Quick Stats Bar */
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+
+    .stat-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 12px;
+      text-align: center;
+    }
+
+    .stat-num {
+      font-size: 17px;
+      font-weight: 900;
+      color: var(--primary-dark);
+    }
+
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+      font-weight: 600;
+    }
+
+    /* Section Headings */
+    .section-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--primary-dark);
+    }
+
+    .see-all-link {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--primary);
+      cursor: pointer;
+    }
+
+    /* Continue Learning Card */
+    .continue-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+      margin-bottom: 22px;
+      box-shadow: 0 4px 12px rgba(20, 53, 29, 0.04);
+      cursor: pointer;
+    }
+
+    .continue-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+
+    .subject-pill {
+      background: var(--primary-light);
+      color: var(--primary);
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+
+    .continue-title {
+      font-size: 14px;
+      font-weight: 800;
+      color: var(--primary-dark);
+      margin-bottom: 4px;
+    }
+
+    .continue-instructor {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .progress-track {
+      background: #EAEFEA;
+      border-radius: 6px;
+      height: 7px;
+      overflow: hidden;
+      margin-bottom: 6px;
+    }
+
+    .progress-fill {
+      background: var(--primary);
+      height: 100%;
+      border-radius: 6px;
+    }
+
+    .progress-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    /* Filter Chips */
+    .chips-slider {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      padding-bottom: 14px;
+      margin-bottom: 14px;
+      scrollbar-width: none;
+    }
+
+    .chips-slider::-webkit-scrollbar {
+      display: none;
+    }
+
+    .filter-chip {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      padding: 7px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #55655B;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .filter-chip.active {
+      background: var(--primary);
+      color: #FFFFFF;
+      border-color: var(--primary);
+    }
+
+    /* Course Cards Grid */
+    .course-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      overflow: hidden;
+      margin-bottom: 16px;
+      box-shadow: 0 4px 14px rgba(20, 53, 29, 0.05);
+      cursor: pointer;
+      transition: transform 0.15s;
+    }
+
+    .course-card:active {
+      transform: scale(0.985);
+    }
+
+    .course-thumb-box {
+      height: 140px;
+      background: #14351D;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .course-thumb-box img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      opacity: 0.88;
+    }
+
+    .thumb-badge {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      background: rgba(20, 53, 29, 0.75);
+      color: #FFFFFF;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 4px 8px;
+      border-radius: 6px;
+      backdrop-filter: blur(4px);
+    }
+
+    .thumb-price {
+      position: absolute;
+      bottom: 10px;
+      right: 10px;
+      background: #FFFFFF;
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 900;
+      padding: 4px 10px;
+      border-radius: 8px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+    }
+
+    .course-body {
+      padding: 14px;
+    }
+
+    .course-rating-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--primary-dark);
+      margin-bottom: 6px;
+    }
+
+    .course-title {
+      font-size: 15px;
+      font-weight: 800;
+      color: var(--primary-dark);
+      line-height: 1.35;
+      margin-bottom: 8px;
+    }
+
+    .course-tutor-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .tutor-mini-avatar {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+
+    /* Tutors Screen */
+    .tutor-card {
+      background: #FFFFFF;
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 16px;
+      margin-bottom: 14px;
+      box-shadow: 0 4px 12px rgba(20, 53, 29, 0.04);
+    }
+
+    .tutor-header-row {
+      display: flex;
+      gap: 14px;
+      cursor: pointer;
+    }
+
+    .tutor-avatar {
+      width: 58px;
+      height: 58px;
+      border-radius: 29px;
+      object-fit: cover;
+      background: var(--primary-light);
+    }
+
+    .tutor-info {
+      flex: 1;
+    }
+
+    .tutor-name {
+      font-size: 16px;
+      font-weight: 800;
+      color: var(--primary-dark);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tutor-specialty {
+      font-size: 12px;
+      color: #55655B;
+      margin: 3px 0;
+      font-weight: 500;
+    }
+
+    .tutor-stats {
+      font-size: 12px;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .tutor-tags-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin: 12px 0;
+    }
+
+    .tutor-tag {
+      background: #F3F6F4;
+      font-size: 11px;
+      font-weight: 600;
+      color: #4A5B50;
+      padding: 3px 8px;
+      border-radius: 6px;
+    }
+
+    .tutor-actions-row {
+      border-top: 1px solid #F0F4F1;
+      padding-top: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .tutor-rate-box {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .tutor-rate-num {
+      font-size: 15px;
+      font-weight: 900;
+      color: var(--primary-dark);
+    }
+
+    .tutor-btn-group {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn-outline {
+      border: 1px solid #CDE4D4;
+      background: transparent;
+      color: var(--primary);
+      font-size: 12px;
+      font-weight: 700;
+      padding: 8px 12px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    .btn-solid {
+      background: var(--primary);
+      border: none;
+      color: #FFFFFF;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 8px 14px;
+      border-radius: 10px;
+      cursor: pointer;
+    }
+
+    /* Segmented Tab Controls (Purchases Screen) */
+    .segmented-control {
+      background: var(--bg);
+      border: 1px solid #E2EBE4;
+      border-radius: 14px;
+      padding: 4px;
+      display: flex;
+      gap: 4px;
+      margin-bottom: 16px;
+    }
+
+    .segment-btn {
+      flex: 1;
+      padding: 9px;
+      text-align: center;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-radius: 10px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .segment-btn.active {
+      background: #FFFFFF;
+      color: var(--primary);
+      font-weight: 800;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.06);
+    }
+
+    /* Modal / Bottom Sheet */
+    .modal-backdrop {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.6);
+      z-index: 200;
+      display: none;
+      justify-content: flex-end;
+      flex-direction: column;
+      animation: fadeIn 0.2s ease;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .bottom-sheet {
+      background: #FFFFFF;
+      border-top-left-radius: 26px;
+      border-top-right-radius: 26px;
+      padding: 20px;
+      max-height: 85%;
+      overflow-y: auto;
+      box-shadow: 0 -10px 30px rgba(0, 0, 0, 0.2);
+      animation: slideUp 0.25s ease;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(100%); }
+      to { transform: translateY(0); }
+    }
+
+    .sheet-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+
+    .sheet-title {
+      font-size: 17px;
+      font-weight: 800;
+      color: var(--primary-dark);
+    }
+
+    .close-sheet-btn {
+      font-size: 18px;
+      color: var(--text-muted);
+      cursor: pointer;
+      background: none;
+      border: none;
+    }
+
+    /* Slot Card for booking */
+    .slot-item {
+      background: var(--bg);
+      border: 1px solid #DFE7E1;
+      padding: 12px;
+      border-radius: 12px;
+      margin-bottom: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      cursor: pointer;
+    }
+
+    .slot-item.selected {
+      background: var(--primary-light);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    /* Bottom Navigation Bar */
+    .bottom-nav {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 76px;
+      background: #FFFFFF;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: space-around;
+      align-items: center;
+      padding-bottom: 8px;
+      z-index: 150;
+      box-shadow: 0 -4px 16px rgba(20, 53, 29, 0.05);
+    }
+
+    .nav-tab {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      color: #8A9B8E;
+      cursor: pointer;
+      font-size: 10px;
+      font-weight: 700;
+      transition: color 0.15s;
+    }
+
+    .nav-tab i {
+      font-size: 19px;
+    }
+
+    .nav-tab.active {
+      color: var(--primary);
+    }
+
+    .nav-fab-btn {
+      width: 50px;
+      height: 50px;
+      background: var(--primary-dark);
+      border-radius: 16px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      color: #FFFFFF;
+      font-size: 22px;
+      box-shadow: 0 6px 14px rgba(20, 53, 29, 0.25);
+      cursor: pointer;
+      margin-top: -12px;
+      border: none;
+    }
+
+    /* Toast notification */
+    .toast-msg {
+      position: absolute;
+      top: 50px;
+      left: 20px;
+      right: 20px;
+      background: #14351D;
+      color: #FFFFFF;
+      padding: 12px 18px;
+      border-radius: 14px;
+      font-size: 13px;
+      font-weight: 700;
+      display: none;
+      align-items: center;
+      gap: 10px;
+      z-index: 500;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+      animation: fadeIn 0.2s ease;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Phone Shell Container -->
+  <div class="device-wrapper">
+    <!-- Toast Popup -->
+    <div id="toast" class="toast-msg">
+      <i class="fa-solid fa-circle-check" style="color: #4ADE80;"></i>
+      <span id="toast-text">Action successful</span>
+    </div>
+
+    <!-- Mobile Top Status Bar -->
+    <div class="status-bar">
+      <span>9:41</span>
+      <div class="status-icons">
+        <i class="fa-solid fa-signal"></i>
+        <i class="fa-solid fa-wifi"></i>
+        <i class="fa-solid fa-battery-full"></i>
+      </div>
+    </div>
+
+    <!-- App Header -->
+    <header class="app-header">
+      <div class="brand-title">
+        <i class="fa-solid fa-graduation-cap" style="color: var(--primary);"></i>
+        Klaso
+        <span class="brand-badge">ACADEMY</span>
+      </div>
+      <div class="header-actions">
+        <div class="icon-btn" onclick="showToast('Notifications are all caught up!')">
+          <i class="fa-regular fa-bell"></i>
+          <span class="notif-dot"></span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Scroll Body -->
+    <div class="app-body">
+
+      <!-- ================= SCREEN 1: HOME (DASHBOARD) ================= -->
+      <section id="screen-home" class="screen-view active">
+        <!-- Motivational Hero -->
+        <div class="hero-card">
+          <div class="hero-badge">
+            <i class="fa-solid fa-bolt"></i> EXAM PREP 2026
+          </div>
+          <h2 class="hero-title">Keep learning, keep winning!</h2>
+          <p class="hero-sub">Book 1-on-1 sessions with top tutors or practice WAEC & JAMB modules on your schedule.</p>
+          <button class="hero-btn" onclick="switchTab('tutors')">
+            <i class="fa-solid fa-user-graduate"></i> Browse Tutors
+          </button>
+        </div>
+
+        <!-- Quick Stats -->
+        <div class="stats-row">
+          <div class="stat-card">
+            <div class="stat-num">3</div>
+            <div class="stat-label">In Progress</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" style="color: #F59E0B;"><i class="fa-solid fa-fire"></i> 5</div>
+            <div class="stat-label">Day Streak</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-num" style="color: var(--primary);">12</div>
+            <div class="stat-label">Certificates</div>
+          </div>
+        </div>
+
+        <!-- Continue Learning -->
+        <div class="section-header">
+          <h3 class="section-title">Continue Learning</h3>
+          <span class="see-all-link" onclick="switchTab('purchases')">View All</span>
+        </div>
+
+        <div class="continue-card" onclick="openLessonPlayer('1', 'Mastering Algebra Basics & Linear Equations')">
+          <div class="continue-top">
+            <span class="subject-pill">Mathematics</span>
+            <span style="font-size: 11px; color: var(--text-muted);">Last seen: Yesterday</span>
+          </div>
+          <div class="continue-title">Mastering Algebra Basics & Linear Equations</div>
+          <div class="continue-instructor">Engr. Tunde Adeleke • 8/12 lessons</div>
+          <div class="progress-track">
+            <div class="progress-fill" style="width: 68%;"></div>
+          </div>
+          <div class="progress-meta">
+            <span style="color: var(--primary);">68% complete</span>
+            <span style="display: flex; align-items: center; gap: 4px;">
+              <i class="fa-solid fa-play" style="font-size: 9px; color: var(--primary);"></i> Resume
+            </span>
+          </div>
+        </div>
+
+        <!-- Subject Chips Filter -->
+        <div class="section-header">
+          <h3 class="section-title">Featured Courses</h3>
+        </div>
+
+        <div class="chips-slider">
+          <div class="filter-chip active" onclick="filterHomeCategory(this, 'all')">All</div>
+          <div class="filter-chip" onclick="filterHomeCategory(this, 'math')">Mathematics</div>
+          <div class="filter-chip" onclick="filterHomeCategory(this, 'science')">Science</div>
+          <div class="filter-chip" onclick="filterHomeCategory(this, 'languages')">Languages</div>
+          <div class="filter-chip" onclick="filterHomeCategory(this, 'cs')">Computer Science</div>
+        </div>
+
+        <!-- Course 1 -->
+        <div class="course-card" data-cat="math" onclick="openCourseDetails('1')">
+          <div class="course-thumb-box">
+            <img src="https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=700&q=80" alt="Algebra">
+            <span class="thumb-badge"><i class="fa-solid fa-calculator"></i> Mathematics</span>
+            <span class="thumb-price">₦12,500</span>
+          </div>
+          <div class="course-body">
+            <div class="course-rating-row">
+              <i class="fa-solid fa-star" style="color: var(--star-color);"></i> 4.9
+              <span style="color: var(--text-muted); font-weight: 500;">(324 reviews) • 14 lessons</span>
+            </div>
+            <div class="course-title">Mastering Algebra Basics & Linear Equations</div>
+            <div class="course-tutor-row">
+              <img class="tutor-mini-avatar" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=120&q=80">
+              <span>Engr. Tunde Adeleke</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Course 2 -->
+        <div class="course-card" data-cat="science" onclick="openCourseDetails('2')">
+          <div class="course-thumb-box">
+            <img src="https://images.unsplash.com/photo-1532094349884-543bc11b234d?auto=format&fit=crop&w=700&q=80" alt="Biology">
+            <span class="thumb-badge"><i class="fa-solid fa-dna"></i> Science</span>
+            <span class="thumb-price">₦11,000</span>
+          </div>
+          <div class="course-body">
+            <div class="course-rating-row">
+              <i class="fa-solid fa-star" style="color: var(--star-color);"></i> 4.85
+              <span style="color: var(--text-muted); font-weight: 500;">(218 reviews) • 12 lessons</span>
+            </div>
+            <div class="course-title">Cellular Biology & Genetics Foundations</div>
+            <div class="course-tutor-row">
+              <img class="tutor-mini-avatar" src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=120&q=80">
+              <span>Dr. Ngozi Eze</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Course 3 -->
+        <div class="course-card" data-cat="cs" onclick="openCourseDetails('3')">
+          <div class="course-thumb-box">
+            <img src="https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=700&q=80" alt="Python">
+            <span class="thumb-badge"><i class="fa-solid fa-code"></i> Computer Science</span>
+            <span class="thumb-price">₦14,000</span>
+          </div>
+          <div class="course-body">
+            <div class="course-rating-row">
+              <i class="fa-solid fa-star" style="color: var(--star-color);"></i> 4.92
+              <span style="color: var(--text-muted); font-weight: 500;">(185 reviews) • 18 lessons</span>
+            </div>
+            <div class="course-title">Python for Beginners & Practical Projects</div>
+            <div class="course-tutor-row">
+              <img class="tutor-mini-avatar" src="https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?auto=format&fit=crop&w=120&q=80">
+              <span>Chukwuma Obi</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ================= SCREEN 2: TUTORS MARKETPLACE ================= -->
+      <section id="screen-tutors" class="screen-view">
+        <div style="margin-bottom: 14px;">
+          <h2 style="font-size: 20px; font-weight: 900; color: var(--primary-dark);">Tutor Marketplace</h2>
+          <p style="font-size: 13px; color: var(--text-muted);">Verified educators available for 1-on-1 private coaching</p>
+        </div>
+
+        <!-- Tutor 1 -->
+        <div class="tutor-card">
+          <div class="tutor-header-row" onclick="openTutorModal('Dr. Ngozi Eze', 'Science', 'Ph.D. in Cellular Biology, University of Ibadan', 3500, 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80')">
+            <img class="tutor-avatar" src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=400&q=80">
+            <div class="tutor-info">
+              <div class="tutor-name">
+                Dr. Ngozi Eze
+                <i class="fa-solid fa-circle-check" style="color: var(--primary); font-size: 14px;"></i>
+              </div>
+              <div class="tutor-specialty">Biology & Life Sciences (WAEC / JAMB)</div>
+              <div class="tutor-stats">
+                <i class="fa-solid fa-star" style="color: var(--star-color);"></i> 4.9 (142 reviews) • 8 yrs exp
+              </div>
+            </div>
+          </div>
+          <div class="tutor-tags-row">
+            <span class="tutor-tag">Cell Biology</span>
+            <span class="tutor-tag">Genetics</span>
+            <span class="tutor-tag">WAEC Prep</span>
+          </div>
+          <div class="tutor-actions-row">
+            <div class="tutor-rate-box">
+              Rate: <span class="tutor-rate-num">₦3,500</span> / hr
+            </div>
+            <div class="tutor-btn-group">
+              <button class="btn-outline" onclick="openMessageModal('Dr. Ngozi Eze')">
+                <i class="fa-regular fa-comment"></i> Message
+              </button>
+              <button class="btn-solid" onclick="openBookingModal('Dr. Ngozi Eze', 3500)">
+                Book Session
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tutor 2 -->
+        <div class="tutor-card">
+          <div class="tutor-header-row" onclick="openTutorModal('Engr. Tunde Adeleke', 'Mathematics', 'B.Eng. Mechanical Engineering, FUTA', 4000, 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80')">
+            <img class="tutor-avatar" src="https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80">
+            <div class="tutor-info">
+              <div class="tutor-name">
+                Engr. Tunde Adeleke
+                <i class="fa-solid fa-circle-check" style="color: var(--primary); font-size: 14px;"></i>
+              </div>
+              <div class="tutor-specialty">Advanced Mathematics & Calculus</div>
+              <div class="tutor-stats">
+                <i class="fa-solid fa-star" style="color: var(--star-color);"></i> 4.95 (198 reviews) • 6 yrs exp
+              </div>
+            </div>
+          </div>
+          <div class="tutor-tags-row">
+            <span class="tutor-tag">Calculus</span>
+            <span class="tutor-tag">Algebra</span>
+            <span class="tutor-tag">JAMB Math</span>
+          </div>
+          <div class="tutor-actions-row">
+            <div class="tutor-rate-box">
+              Rate: <span class="tutor-rate-num">₦4,000</span> / hr
+            </div>
+            <div class="tutor-btn-group">
+              <button class="btn-outline" onclick="openMessageModal('Engr. Tunde Adeleke')">
+                <i class="fa-regular fa-comment"></i> Message
+              </button>
+              <button class="btn-solid" onclick="openBookingModal('Engr. Tunde Adeleke', 4000)">
+                Book Session
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Tutor 3 -->
+        <div class="tutor-card">
+          <div class="tutor-header-row" onclick="openTutorModal('Mrs. Funmi Bello', 'Languages', 'M.A. English Literature, UNILAG', 3000, 'https://images.unsplash.com/photo-1580894732488-8289bf6554c0?auto=format&fit=crop&w=400&q=80')">
+            <img class="tutor-avatar" src="https://images.unsplash.com/photo-1580894732488-8289bf6554c0?auto=format&fit=crop&w=400&q=80">
+            <div class="tutor-info">
+              <div class="tutor-name">
+                Mrs. Funmi Bello
+                <i class="fa-solid fa-circle-check" style="color: var(--primary); font-size: 14px;"></i>
+              </div>
+              <div class="tutor-specialty">English Grammar, IELTS & Essay Writing</div>
+              <div class="tutor-stats">
+                <i class="fa-solid fa-star" style="color: var(--star-color);"></i> 4.88 (110 reviews) • 10 yrs exp
+              </div>
+            </div>
+          </div>
+          <div class="tutor-tags-row">
+            <span class="tutor-tag">IELTS</span>
+            <span class="tutor-tag">Essay Craft</span>
+            <span class="tutor-tag">Grammar</span>
+          </div>
+          <div class="tutor-actions-row">
+            <div class="tutor-rate-box">
+              Rate: <span class="tutor-rate-num">₦3,000</span> / hr
+            </div>
+            <div class="tutor-btn-group">
+              <button class="btn-outline" onclick="openMessageModal('Mrs. Funmi Bello')">
+                <i class="fa-regular fa-comment"></i> Message
+              </button>
+              <button class="btn-solid" onclick="openBookingModal('Mrs. Funmi Bello', 3000)">
+                Book Session
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ================= SCREEN 3: PURCHASES / MY LEARNING ================= -->
+      <section id="screen-purchases" class="screen-view">
+        <div style="margin-bottom: 14px;">
+          <h2 style="font-size: 20px; font-weight: 900; color: var(--primary-dark);">My Learning</h2>
+          <p style="font-size: 13px; color: var(--text-muted);">Enrolled lessons, saved bookmarks & receipts</p>
+        </div>
+
+        <!-- 3 Segment Switcher -->
+        <div class="segmented-control">
+          <div class="segment-btn active" onclick="switchPurchaseSubTab(this, 'sub-enrolled')">Enrolled (3)</div>
+          <div class="segment-btn" onclick="switchPurchaseSubTab(this, 'sub-saved')">Saved (2)</div>
+          <div class="segment-btn" onclick="switchPurchaseSubTab(this, 'sub-history')">Receipts (3)</div>
+        </div>
+
+        <!-- Subtab 1: Enrolled -->
+        <div id="sub-enrolled" class="subtab-view" style="display: block;">
+          <div class="continue-card" onclick="openLessonPlayer('1', 'Mastering Algebra Basics & Linear Equations')">
+            <div class="continue-top">
+              <span class="subject-pill">Mathematics</span>
+              <span style="font-size: 11px; color: var(--text-muted);">8/12 completed</span>
+            </div>
+            <div class="continue-title">Mastering Algebra Basics & Linear Equations</div>
+            <div class="continue-instructor">Engr. Tunde Adeleke</div>
+            <div class="progress-track"><div class="progress-fill" style="width: 68%;"></div></div>
+            <div class="progress-meta">
+              <span style="color: var(--primary);">68% complete</span>
+              <span style="color: var(--primary); font-weight: 700;"><i class="fa-solid fa-play"></i> Resume</span>
+            </div>
+          </div>
+
+          <div class="continue-card" onclick="openLessonPlayer('2', 'Cellular Biology & Genetics Foundations')">
+            <div class="continue-top">
+              <span class="subject-pill">Science</span>
+              <span style="font-size: 11px; color: var(--text-muted);">5/11 completed</span>
+            </div>
+            <div class="continue-title">Cellular Biology & Genetics Foundations</div>
+            <div class="continue-instructor">Dr. Ngozi Eze</div>
+            <div class="progress-track"><div class="progress-fill" style="width: 45%;"></div></div>
+            <div class="progress-meta">
+              <span style="color: var(--primary);">45% complete</span>
+              <span style="color: var(--primary); font-weight: 700;"><i class="fa-solid fa-play"></i> Resume</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subtab 2: Saved -->
+        <div id="sub-saved" class="subtab-view" style="display: none;">
+          <div class="course-card" onclick="openCourseDetails('1')">
+            <div class="course-body">
+              <span class="subject-pill">Languages</span>
+              <div class="course-title" style="margin-top: 6px;">IELTS Academic Writing & Speaking Masterclass</div>
+              <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 10px;">Mrs. Funmi Bello • 14 lessons</div>
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <span style="font-size: 16px; font-weight: 900; color: var(--primary);">₦15,000</span>
+                <button class="btn-solid" onclick="event.stopPropagation(); openCheckout('IELTS Masterclass', 15000, 'Mrs. Funmi Bello')">Enroll Now</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subtab 3: History -->
+        <div id="sub-history" class="subtab-view" style="display: none;">
+          <div style="background: #FFFFFF; border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px;">
+              <span style="font-weight: 800; color: var(--primary-dark);">#KLASO-90412</span>
+              <span style="color: var(--primary); font-weight: 700;">● Completed</span>
+            </div>
+            <div style="font-size: 14px; font-weight: 700; color: var(--primary-dark);">Mastering Algebra Basics & Linear Equations</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; border-top: 1px solid #F0F4F1; padding-top: 8px;">
+              <span style="font-size: 15px; font-weight: 900; color: var(--primary-dark);">₦14,500</span>
+              <button class="btn-outline" onclick="openReceipt('KLASO-90412', 'Mastering Algebra Basics', 14500, 'Oct 20, 2026')">
+                <i class="fa-regular fa-file-lines"></i> View Receipt
+              </button>
+            </div>
+          </div>
+
+          <div style="background: #FFFFFF; border: 1px solid var(--border); border-radius: 14px; padding: 14px; margin-bottom: 10px;">
+            <div style="display: flex; justify-content: space-between; font-size: 12px; margin-bottom: 6px;">
+              <span style="font-weight: 800; color: var(--primary-dark);">#KLASO-88231</span>
+              <span style="color: var(--primary); font-weight: 700;">● Completed</span>
+            </div>
+            <div style="font-size: 14px; font-weight: 700; color: var(--primary-dark);">Cellular Biology & Genetics Foundations</div>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 10px; border-top: 1px solid #F0F4F1; padding-top: 8px;">
+              <span style="font-size: 15px; font-weight: 900; color: var(--primary-dark);">₦12,000</span>
+              <button class="btn-outline" onclick="openReceipt('KLASO-88231', 'Cellular Biology', 12000, 'Oct 14, 2026')">
+                <i class="fa-regular fa-file-lines"></i> View Receipt
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- ================= SCREEN 4: PROFILE ================= -->
+      <section id="screen-profile" class="screen-view">
+        <div style="text-align: center; padding: 20px 0;">
+          <img src="https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80" style="width: 84px; height: 84px; border-radius: 42px; object-fit: cover; border: 3px solid var(--primary);">
+          <h2 style="font-size: 18px; font-weight: 800; color: var(--primary-dark); margin-top: 10px;">Chiamaka Okafor</h2>
+          <p style="font-size: 12px; color: var(--text-muted);">chiamaka.okafor@klaso.edu</p>
+          <span style="background: var(--primary-light); color: var(--primary); font-size: 11px; font-weight: 800; padding: 3px 10px; border-radius: 20px; display: inline-block; margin-top: 6px;">STUDENT MEMBER</span>
+        </div>
+
+        <div style="background: #FFFFFF; border: 1px solid var(--border); border-radius: 16px; overflow: hidden; margin-bottom: 16px;">
+          <div style="padding: 14px 16px; border-bottom: 1px solid #F0F4F1; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="showToast('Edit profile opened')">
+            <span style="font-size: 14px; font-weight: 700; color: var(--primary-dark);"><i class="fa-regular fa-user" style="margin-right: 10px; color: var(--primary);"></i> Edit Profile</span>
+            <i class="fa-solid fa-chevron-right" style="font-size: 12px; color: var(--text-muted);"></i>
+          </div>
+          <div style="padding: 14px 16px; border-bottom: 1px solid #F0F4F1; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="showToast('Applying to become a tutor...')">
+            <span style="font-size: 14px; font-weight: 700; color: var(--primary-dark);"><i class="fa-solid fa-chalkboard-user" style="margin-right: 10px; color: var(--primary);"></i> Become a Tutor</span>
+            <i class="fa-solid fa-chevron-right" style="font-size: 12px; color: var(--text-muted);"></i>
+          </div>
+          <div style="padding: 14px 16px; display: flex; justify-content: space-between; align-items: center; cursor: pointer;" onclick="showToast('Support ticket initiated')">
+            <span style="font-size: 14px; font-weight: 700; color: var(--primary-dark);"><i class="fa-regular fa-circle-question" style="margin-right: 10px; color: var(--primary);"></i> Help & FAQs</span>
+            <i class="fa-solid fa-chevron-right" style="font-size: 12px; color: var(--text-muted);"></i>
+          </div>
+        </div>
+
+        <button style="width: 100%; padding: 14px; border-radius: 14px; border: 1px solid #FCA5A5; background: #FEF2F2; color: #DC2626; font-size: 14px; font-weight: 800; cursor: pointer;" onclick="showToast('Logged out successfully')">
+          Log Out
+        </button>
+      </section>
+
+    </div>
+
+    <!-- Bottom Navigation Bar -->
+    <nav class="bottom-nav">
+      <div class="nav-tab active" onclick="switchTab('home')">
+        <i class="fa-solid fa-house"></i>
+        <span>Home</span>
+      </div>
+      <div class="nav-tab" onclick="switchTab('tutors')">
+        <i class="fa-solid fa-users"></i>
+        <span>Tutors</span>
+      </div>
+      <button class="nav-fab-btn" onclick="showToast('Upload Course Wizard opened!')">
+        <i class="fa-solid fa-plus"></i>
+      </button>
+      <div class="nav-tab" onclick="switchTab('purchases')">
+        <i class="fa-solid fa-receipt"></i>
+        <span>Purchases</span>
+      </div>
+      <div class="nav-tab" onclick="switchTab('profile')">
+        <i class="fa-solid fa-user"></i>
+        <span>Profile</span>
+      </div>
+    </nav>
+
+    <!-- ================= MODALS & BOTTOM SHEETS ================= -->
+
+    <!-- Modal: Course Details & Curriculum -->
+    <div id="modal-course" class="modal-backdrop">
+      <div class="bottom-sheet" style="max-height: 90%;">
+        <div class="sheet-header">
+          <span class="sheet-title" id="course-sheet-title">Course Details</span>
+          <button class="close-sheet-btn" onclick="closeModal('modal-course')">&times;</button>
+        </div>
+        <div id="course-sheet-content">
+          <img id="course-sheet-img" src="" style="width: 100%; height: 160px; border-radius: 14px; object-fit: cover; margin-bottom: 12px;">
+          <h3 id="course-sheet-name" style="font-size: 18px; font-weight: 900; color: var(--primary-dark); margin-bottom: 6px;"></h3>
+          <p id="course-sheet-instructor" style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px;"></p>
+          
+          <h4 style="font-size: 14px; font-weight: 800; color: var(--primary-dark); margin-bottom: 8px;">What You Will Learn</h4>
+          <ul style="font-size: 13px; color: #374151; padding-left: 18px; line-height: 1.6; margin-bottom: 16px;">
+            <li>Step-by-step master drills for WAEC and JAMB exams</li>
+            <li>Interactive problem sets and downloadable cheat sheets</li>
+            <li>Direct instructor Q&A access</li>
+          </ul>
+
+          <h4 style="font-size: 14px; font-weight: 800; color: var(--primary-dark); margin-bottom: 8px;">Syllabus Modules</h4>
+          <div style="background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 10px; margin-bottom: 18px;">
+            <div style="padding: 6px 0; border-bottom: 1px solid #E8EFEA; font-size: 13px; font-weight: 700; color: var(--primary-dark); display: flex; justify-content: space-between;">
+              <span>1. Foundational Concepts</span>
+              <span style="color: var(--primary); font-size: 11px;">Preview</span>
+            </div>
+            <div style="padding: 6px 0; border-bottom: 1px solid #E8EFEA; font-size: 13px; font-weight: 600; color: #4B5563;">2. Core Problem Solving & Formulas</div>
+            <div style="padding: 6px 0; font-size: 13px; font-weight: 600; color: #4B5563;">3. Practice Drills & Mock Exam</div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #F0F4F1; padding-top: 14px;">
+            <div>
+              <div style="font-size: 11px; color: var(--text-muted);">COURSE FEE</div>
+              <div id="course-sheet-price" style="font-size: 20px; font-weight: 900; color: var(--primary);"></div>
+            </div>
+            <button class="btn-solid" style="padding: 12px 24px; font-size: 14px;" id="course-sheet-enroll-btn">Enroll Now</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Checkout & Payment -->
+    <div id="modal-checkout" class="modal-backdrop">
+      <div class="bottom-sheet">
+        <div class="sheet-header">
+          <span class="sheet-title">Order Checkout</span>
+          <button class="close-sheet-btn" onclick="closeModal('modal-checkout')">&times;</button>
+        </div>
+        <div>
+          <div style="background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 12px; margin-bottom: 14px;">
+            <div style="font-size: 11px; font-weight: 700; color: var(--primary);">SELECTED COURSE</div>
+            <div id="checkout-title" style="font-size: 14px; font-weight: 800; color: var(--primary-dark); margin: 4px 0;"></div>
+            <div id="checkout-tutor" style="font-size: 12px; color: var(--text-muted);"></div>
+          </div>
+
+          <!-- Promo Input -->
+          <div style="margin-bottom: 14px;">
+            <div style="font-size: 12px; font-weight: 700; color: var(--primary-dark); margin-bottom: 6px;">PROMO CODE</div>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="promo-code-input" placeholder="Try: KLASO20" style="flex: 1; padding: 10px; border-radius: 10px; border: 1px solid var(--border); font-size: 13px; text-transform: uppercase;">
+              <button class="btn-outline" onclick="applyPromo()">Apply</button>
+            </div>
+            <div id="promo-success" style="font-size: 11px; font-weight: 700; color: var(--primary); margin-top: 4px; display: none;">✓ 20% discount applied!</div>
+          </div>
+
+          <!-- Payment Options -->
+          <div style="font-size: 12px; font-weight: 700; color: var(--primary-dark); margin-bottom: 6px;">PAYMENT CHANNEL</div>
+          <div class="slot-item selected" onclick="selectPay(this)">
+            <i class="fa-regular fa-credit-card"></i> Paystack (Debit / Credit Card)
+          </div>
+          <div class="slot-item" onclick="selectPay(this)">
+            <i class="fa-solid fa-building-columns"></i> Bank Transfer (Dedicated Virtual Account)
+          </div>
+
+          <div style="border-top: 1px solid var(--border); padding-top: 10px; margin-top: 14px; font-size: 13px;">
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span style="color: var(--text-muted);">Subtotal</span>
+              <span id="checkout-subtotal" style="font-weight: 700;">₦12,500</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 4px;" id="checkout-discount-row">
+              <span style="color: var(--primary);">Discount</span>
+              <span id="checkout-discount" style="color: var(--primary); font-weight: 700;">-₦0</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; margin-bottom: 6px;">
+              <span style="color: var(--text-muted);">VAT (7.5%)</span>
+              <span id="checkout-vat" style="font-weight: 700;">₦938</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 16px; font-weight: 900; color: var(--primary-dark); border-top: 1px solid #F0F4F1; padding-top: 8px;">
+              <span>Total Paid</span>
+              <span id="checkout-total" style="color: var(--primary);">₦13,438</span>
+            </div>
+          </div>
+
+          <button class="btn-solid" style="width: 100%; padding: 14px; font-size: 15px; margin-top: 16px;" onclick="completePayment()">
+            <i class="fa-solid fa-lock"></i> Pay Now with Paystack
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Official Payment Receipt -->
+    <div id="modal-receipt" class="modal-backdrop">
+      <div class="bottom-sheet">
+        <div class="sheet-header">
+          <span class="sheet-title">Payment Receipt</span>
+          <button class="close-sheet-btn" onclick="closeModal('modal-receipt')">&times;</button>
+        </div>
+        <div style="text-align: center; padding: 10px 0;">
+          <div style="width: 60px; height: 60px; border-radius: 30px; background: var(--primary-light); color: var(--primary); font-size: 26px; display: flex; align-items: center; justify-content: center; margin: 0 auto 10px;">
+            <i class="fa-solid fa-check"></i>
+          </div>
+          <div id="receipt-amount" style="font-size: 24px; font-weight: 900; color: var(--primary-dark);"></div>
+          <div style="font-size: 12px; font-weight: 700; color: var(--primary); margin-top: 2px;">Payment Successful</div>
+          <div id="receipt-ref" style="font-size: 11px; color: var(--text-muted); margin-top: 2px;"></div>
+        </div>
+
+        <div style="border-top: 1px solid var(--border); padding-top: 14px; font-size: 13px; line-height: 2;">
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Issued To</span>
+            <span style="font-weight: 700;">Chiamaka Okafor</span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Course</span>
+            <span id="receipt-course" style="font-weight: 700; max-width: 60%; text-align: right;"></span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Date</span>
+            <span id="receipt-date" style="font-weight: 700;"></span>
+          </div>
+          <div style="display: flex; justify-content: space-between;">
+            <span style="color: var(--text-muted);">Payment Channel</span>
+            <span style="font-weight: 700;">Paystack (Debit Card)</span>
+          </div>
+        </div>
+
+        <button class="btn-solid" style="width: 100%; padding: 12px; margin-top: 16px;" onclick="showToast('PDF Receipt sent to your email!'); closeModal('modal-receipt');">
+          <i class="fa-solid fa-download"></i> Download PDF Receipt
+        </button>
+      </div>
+    </div>
+
+    <!-- Modal: Book Session -->
+    <div id="modal-booking" class="modal-backdrop">
+      <div class="bottom-sheet">
+        <div class="sheet-header">
+          <span class="sheet-title">Book 1-on-1 Session</span>
+          <button class="close-sheet-btn" onclick="closeModal('modal-booking')">&times;</button>
+        </div>
+        <div style="font-size: 14px; font-weight: 800; color: var(--primary-dark);" id="booking-tutor-name"></div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-bottom: 14px;">Select an available time slot for your personalized lesson:</div>
+
+        <div class="slot-item selected" onclick="selectSlot(this)">
+          <i class="fa-regular fa-clock" style="color: var(--primary);"></i> Tomorrow at 10:00 AM
+        </div>
+        <div class="slot-item" onclick="selectSlot(this)">
+          <i class="fa-regular fa-clock" style="color: var(--text-muted);"></i> Tomorrow at 2:00 PM
+        </div>
+        <div class="slot-item" onclick="selectSlot(this)">
+          <i class="fa-regular fa-clock" style="color: var(--text-muted);"></i> Saturday at 11:00 AM
+        </div>
+
+        <div style="background: var(--primary-mint); border: 1px solid #BBF7D0; border-radius: 12px; padding: 12px; font-size: 12px; color: #166534; margin: 14px 0;">
+          <i class="fa-solid fa-shield-halved"></i> 100% Satisfaction Guarantee. Free reschedule or full refund up to 2 hours prior.
+        </div>
+
+        <button class="btn-solid" style="width: 100%; padding: 14px; font-size: 14px;" onclick="confirmBooking()">
+          Confirm & Reserve Slot
+        </button>
+      </div>
+    </div>
+
+    <!-- Modal: Interactive Lesson Video Player -->
+    <div id="modal-player" class="modal-backdrop">
+      <div class="bottom-sheet" style="max-height: 94%;">
+        <div class="sheet-header">
+          <span class="sheet-title" id="player-title">Lesson Playback</span>
+          <button class="close-sheet-btn" onclick="closeModal('modal-player')">&times;</button>
+        </div>
+        <!-- Mock Video Screen -->
+        <div style="width: 100%; height: 180px; background: #000000; border-radius: 14px; display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative; color: #FFFFFF; overflow: hidden;">
+          <div style="width: 52px; height: 52px; border-radius: 26px; background: rgba(21, 128, 61, 0.9); display: flex; justify-content: center; align-items: center; font-size: 20px; cursor: pointer;" onclick="togglePlay(this)">
+            <i class="fa-solid fa-play" style="margin-left: 3px;"></i>
+          </div>
+          <!-- Video controls scrub bar -->
+          <div style="position: absolute; bottom: 10px; left: 14px; right: 14px; display: flex; align-items: center; gap: 8px; font-size: 11px;">
+            <span>04:18</span>
+            <div style="flex: 1; height: 4px; background: rgba(255,255,255,0.3); border-radius: 2px;">
+              <div style="width: 35%; height: 100%; background: var(--primary); border-radius: 2px;"></div>
+            </div>
+            <span>18:24</span>
+          </div>
+        </div>
+
+        <h3 id="player-headline" style="font-size: 16px; font-weight: 800; color: var(--primary-dark); margin: 14px 0 6px;"></h3>
+        <p style="font-size: 13px; color: var(--text-muted); line-height: 1.4; margin-bottom: 16px;">
+          Learn foundational rules, key equations, and clear worked examples step by step.
+        </p>
+
+        <h4 style="font-size: 14px; font-weight: 800; color: var(--primary-dark); margin-bottom: 8px;">Chapters in this Lesson</h4>
+        <div style="display: flex; flex-direction: column; gap: 8px;">
+          <div style="padding: 10px; background: var(--primary-light); border-radius: 10px; font-size: 13px; font-weight: 700; color: var(--primary); display: flex; justify-content: space-between;">
+            <span>▶ 1. Introduction & Overview</span>
+            <span>04:18</span>
+          </div>
+          <div style="padding: 10px; background: var(--bg); border-radius: 10px; font-size: 13px; font-weight: 600; color: #4B5563; display: flex; justify-content: space-between;">
+            <span>2. Step-by-Step Problem Solving</span>
+            <span>07:40</span>
+          </div>
+          <div style="padding: 10px; background: var(--bg); border-radius: 10px; font-size: 13px; font-weight: 600; color: #4B5563; display: flex; justify-content: space-between;">
+            <span>3. WAEC & JAMB Past Questions</span>
+            <span>06:26</span>
+          </div>
+        </div>
+
+        <button class="btn-solid" style="width: 100%; padding: 12px; margin-top: 18px;" onclick="showToast('Lesson marked as complete! +50 XP'); closeModal('modal-player');">
+          <i class="fa-solid fa-check"></i> Mark Complete & Next Lesson
+        </button>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    // Tab switching
+    function switchTab(tabId) {
+      document.querySelectorAll('.screen-view').forEach(s => s.classList.remove('active'));
+      document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+
+      const targetScreen = document.getElementById('screen-' + tabId);
+      if (targetScreen) targetScreen.classList.add('active');
+
+      const tabs = document.querySelectorAll('.nav-tab');
+      if (tabId === 'home') tabs[0].classList.add('active');
+      if (tabId === 'tutors') tabs[1].classList.add('active');
+      if (tabId === 'purchases') tabs[2].classList.add('active');
+      if (tabId === 'profile') tabs[3].classList.add('active');
+    }
+
+    function switchPurchaseSubTab(btn, subId) {
+      document.querySelectorAll('.segment-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.subtab-view').forEach(v => v.style.display = 'none');
+
+      btn.classList.add('active');
+      document.getElementById(subId).style.display = 'block';
+    }
+
+    function filterHomeCategory(chip, cat) {
+      document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+
+      const cards = document.querySelectorAll('.course-card');
+      cards.forEach(card => {
+        if (cat === 'all' || card.getAttribute('data-cat') === cat) {
+          card.style.display = 'block';
+        } else {
+          card.style.display = 'none';
+        }
+      });
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      document.getElementById('toast-text').innerText = msg;
+      toast.style.display = 'flex';
+      setTimeout(() => { toast.style.display = 'none'; }, 2400);
+    }
+
+    function closeModal(id) {
+      document.getElementById(id).classList.remove('open');
+    }
+
+    // Modal triggers
+    const COURSES_DATA = {
+      '1': {
+        title: 'Mastering Algebra Basics & Linear Equations',
+        instructor: 'Engr. Tunde Adeleke • FUTA Mechanical Engineering',
+        price: '₦12,500',
+        rawPrice: 12500,
+        img: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=700&q=80'
+      },
+      '2': {
+        title: 'Cellular Biology & Genetics Foundations',
+        instructor: 'Dr. Ngozi Eze • Ph.D. University of Ibadan',
+        price: '₦11,000',
+        rawPrice: 11000,
+        img: 'https://images.unsplash.com/photo-1532094349884-543bc11b234d?auto=format&fit=crop&w=700&q=80'
+      },
+      '3': {
+        title: 'Python for Beginners & Practical Projects',
+        instructor: 'Chukwuma Obi • Covenant University',
+        price: '₦14,000',
+        rawPrice: 14000,
+        img: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=700&q=80'
+      }
+    };
+
+    function openCourseDetails(id) {
+      const data = COURSES_DATA[id] || COURSES_DATA['1'];
+      document.getElementById('course-sheet-title').innerText = 'Course Overview';
+      document.getElementById('course-sheet-name').innerText = data.title;
+      document.getElementById('course-sheet-instructor').innerText = data.instructor;
+      document.getElementById('course-sheet-price').innerText = data.price;
+      document.getElementById('course-sheet-img').src = data.img;
+
+      document.getElementById('course-sheet-enroll-btn').onclick = () => {
+        closeModal('modal-course');
+        openCheckout(data.title, data.rawPrice, data.instructor);
+      };
+
+      document.getElementById('modal-course').classList.add('open');
+    }
+
+    let currentBasePrice = 12500;
+    let promoDiscount = 0;
+
+    function openCheckout(title, price, instructor) {
+      currentBasePrice = price;
+      promoDiscount = 0;
+      document.getElementById('promo-code-input').value = '';
+      document.getElementById('promo-success').style.display = 'none';
+
+      document.getElementById('checkout-title').innerText = title;
+      document.getElementById('checkout-tutor').innerText = 'Instructor: ' + instructor;
+      updateCheckoutAmounts();
+
+      document.getElementById('modal-checkout').classList.add('open');
+    }
+
+    function updateCheckoutAmounts() {
+      const discount = Math.round(currentBasePrice * promoDiscount);
+      const vat = Math.round((currentBasePrice - discount) * 0.075);
+      const total = currentBasePrice - discount + vat;
+
+      document.getElementById('checkout-subtotal').innerText = '₦' + currentBasePrice.toLocaleString();
+      document.getElementById('checkout-discount').innerText = '-₦' + discount.toLocaleString();
+      document.getElementById('checkout-vat').innerText = '₦' + vat.toLocaleString();
+      document.getElementById('checkout-total').innerText = '₦' + total.toLocaleString();
+    }
+
+    function applyPromo() {
+      const code = document.getElementById('promo-code-input').value.trim().toUpperCase();
+      if (code === 'KLASO20' || code === 'UNIHELP') {
+        promoDiscount = 0.20;
+        document.getElementById('promo-success').style.display = 'block';
+        updateCheckoutAmounts();
+        showToast('20% Promo discount applied!');
+      } else {
+        showToast('Invalid promo code. Try KLASO20');
+      }
+    }
+
+    function completePayment() {
+      closeModal('modal-checkout');
+      showToast('Payment confirmed! Enrolled in course.');
+      switchTab('purchases');
+    }
+
+    function openLessonPlayer(id, title) {
+      document.getElementById('player-title').innerText = 'Lesson Playback';
+      document.getElementById('player-headline').innerText = title;
+      document.getElementById('modal-player').classList.add('open');
+    }
+
+    function togglePlay(btn) {
+      const icon = btn.querySelector('i');
+      if (icon.classList.contains('fa-play')) {
+        icon.classList.remove('fa-play');
+        icon.classList.add('fa-pause');
+        showToast('Playing video...');
+      } else {
+        icon.classList.remove('fa-pause');
+        icon.classList.add('fa-play');
+        showToast('Video paused');
+      }
+    }
+
+    function openBookingModal(tutorName, rate) {
+      document.getElementById('booking-tutor-name').innerText = tutorName + ' (₦' + rate.toLocaleString() + ' / hour)';
+      document.getElementById('modal-booking').classList.add('open');
+    }
+
+    function selectSlot(card) {
+      document.querySelectorAll('#modal-booking .slot-item').forEach(s => s.classList.remove('selected'));
+      card.classList.add('selected');
+    }
+
+    function confirmBooking() {
+      closeModal('modal-booking');
+      showToast('1-on-1 session confirmed! Invite sent to your email.');
+    }
+
+    function openMessageModal(tutorName) {
+      showToast('Message thread opened with ' + tutorName);
+    }
+
+    function openTutorModal(name, subject, creds, rate, avatar) {
+      showToast(name + ' • ' + creds);
+    }
+
+    function openReceipt(ref, title, amount, date) {
+      document.getElementById('receipt-amount').innerText = '₦' + amount.toLocaleString();
+      document.getElementById('receipt-ref').innerText = 'Reference: ' + ref;
+      document.getElementById('receipt-course').innerText = title;
+      document.getElementById('receipt-date').innerText = date;
+      document.getElementById('modal-receipt').classList.add('open');
+    }
+
+    function selectPay(card) {
+      document.querySelectorAll('#modal-checkout .slot-item').forEach(c => c.classList.remove('selected'));
+      card.classList.add('selected');
+    }
+  </script>
+</body>
+</html>
