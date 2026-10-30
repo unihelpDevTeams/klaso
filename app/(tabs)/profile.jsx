@@ -1,10 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useRouter } from 'expo-router'
-import React from 'react'
+import { onAuthStateChanged, signOut } from 'firebase/auth'
+import { doc, onSnapshot } from 'firebase/firestore'
+import React, { useEffect, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Header from '../components/header'
-import { auth } from '../../firebase/config'
+import { auth, db } from '../../firebase/config'
 
 const accountItems = [
   { label: 'Edit profile', icon: 'person-circle-outline' },
@@ -15,13 +17,44 @@ const accountItems = [
 
 export default function Profile() {
   const router = useRouter()
-  const userName = auth.currentUser?.displayName || 'Student learner'
+  const [userProfile, setUserProfile] = useState(null)
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        setUserProfile(null)
+        return
+      }
+
+      const userRef = doc(db, 'users', user.uid)
+      const unsubscribeProfile = onSnapshot(userRef, (snapshot) => {
+        setUserProfile(snapshot.data() || null)
+      })
+
+      return unsubscribeProfile
+    })
+
+    return unsubscribe
+  }, [])
+
+  const userName = userProfile?.displayName || auth.currentUser?.displayName || 'Student learner'
   const initials = userName
     .split(' ')
     .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() || '')
     .join('') || 'SL'
+
+  const isAdmin = userProfile?.role === 'admin'
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth)
+      router.replace('/(auth)/onboarding')
+    } catch (error) {
+      console.log('Failed to sign out', error)
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -54,26 +87,50 @@ export default function Profile() {
           </View>
         </View>
 
-        <Pressable style={styles.primaryButton} onPress={() => router.push('/become-tutor')}>
-          <Ionicons name="school-outline" size={20} color="#FFFFFF" />
-          <Text style={styles.primaryButtonText}>Become a tutor</Text>
-        </Pressable>
+        {!isAdmin && (
+          <Pressable style={styles.primaryButton} onPress={() => router.push('/become-tutor')}>
+            <Ionicons name="school-outline" size={20} color="#FFFFFF" />
+            <Text style={styles.primaryButtonText}>Become a tutor</Text>
+          </Pressable>
+        )}
+
+        {isAdmin && (
+          <Pressable style={styles.adminButton} onPress={() => router.push('/admin-panel')}>
+            <Ionicons name="shield-checkmark-outline" size={20} color="#FFFFFF" />
+            <Text style={styles.primaryButtonText}>Admin panel</Text>
+          </Pressable>
+        )}
 
         <View style={styles.sectionCard}>
           <Text style={styles.sectionTitle}>Account</Text>
 
-          {accountItems.map((item) => (
-            <Pressable key={item.label} style={styles.listItem}>
-              <View style={styles.listLeft}>
-                <View style={styles.iconCircle}>
-                  <Ionicons name={item.icon} size={18} color="#57a0ff" />
+          {accountItems.map((item) => {
+            const isEditProfile = item.label === 'Edit profile'
+
+            return (
+              <Pressable
+                key={item.label}
+                style={styles.listItem}
+                onPress={() => {
+                  if (isEditProfile) router.push('/edit-profile')
+                }}
+              >
+                <View style={styles.listLeft}>
+                  <View style={styles.iconCircle}>
+                    <Ionicons name={item.icon} size={18} color="#57a0ff" />
+                  </View>
+                  <Text style={styles.listText}>{item.label}</Text>
                 </View>
-                <Text style={styles.listText}>{item.label}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#718178" />
-            </Pressable>
-          ))}
+                <Ionicons name="chevron-forward" size={18} color="#718178" />
+              </Pressable>
+            )
+          })}
         </View>
+
+        <Pressable style={styles.logoutButton} onPress={handleLogout}>
+          <Ionicons name="log-out-outline" size={20} color="#FFFFFF" />
+          <Text style={styles.logoutText}>Log out</Text>
+        </Pressable>
       </ScrollView>
     </SafeAreaView>
   )
@@ -130,7 +187,28 @@ const styles = StyleSheet.create({
     marginTop: 20,
     paddingVertical: 16,
   },
+  adminButton: {
+    alignItems: 'center',
+    backgroundColor: '#14351D',
+    borderRadius: 16,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'center',
+    marginTop: 20,
+    paddingVertical: 16,
+  },
   primaryButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  logoutButton: {
+    alignItems: 'center',
+    backgroundColor: '#C24141',
+    borderRadius: 16,
+    flexDirection: 'row',
+    gap: 10,
+    justifyContent: 'center',
+    marginTop: 20,
+    paddingVertical: 16,
+  },
+  logoutText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
   sectionCard: {
     backgroundColor: '#FFFFFF',
     borderRadius: 22,

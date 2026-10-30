@@ -1,7 +1,49 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
-import { Tabs } from 'expo-router'
+import { Tabs, router } from 'expo-router'
+import { onAuthStateChanged } from 'firebase/auth'
+import { doc, onSnapshot } from 'firebase/firestore'
+import { useEffect, useState } from 'react'
+import { Pressable, StyleSheet, View } from 'react-native'
+import { auth, db } from '../../firebase/config'
 
 export default function TabLayout() {
+  const [userProfile, setUserProfile] = useState(null)
+  const [loadingUser, setLoadingUser] = useState(true)
+
+  useEffect(() => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      if (!user) {
+        setUserProfile(null)
+        setLoadingUser(false)
+        return
+      }
+
+      const userRef = doc(db, 'users', user.uid)
+      const unsubscribeProfile = onSnapshot(
+        userRef,
+        (snapshot) => {
+          setUserProfile(snapshot.data() || null)
+          setLoadingUser(false)
+        },
+        () => {
+          setUserProfile(null)
+          setLoadingUser(false)
+        }
+      )
+
+      return unsubscribeProfile
+    })
+
+    return unsubscribeAuth
+  }, [])
+
+  const canCreateContent = !loadingUser && (userProfile?.role === 'admin' || (userProfile?.role === 'tutor' && userProfile?.approved === true))
+
+  const handleUploadAction = () => {
+    if (!canCreateContent) return
+    router.push(userProfile?.role === 'admin' ? '/admin-panel' : '/upload')
+  }
+
   return (
     <Tabs
       screenOptions={{
@@ -55,6 +97,21 @@ export default function TabLayout() {
           ),
         }}
       />
+      {canCreateContent && (
+        <Tabs.Screen
+          name="upload"
+          options={{
+            title: '',
+            tabBarButton: () => (
+              <Pressable onPress={handleUploadAction} accessibilityLabel={userProfile?.role === 'admin' ? 'Open admin panel' : 'Upload lesson'} style={styles.uploadButtonWrapper}>
+                <View style={styles.uploadButton}>
+                  <Ionicons name="add" size={30} color="#FFFFFF" />
+                </View>
+              </Pressable>
+            ),
+          }}
+        />
+      )}
       <Tabs.Screen
         name="purchases"
         options={{
@@ -76,3 +133,25 @@ export default function TabLayout() {
     </Tabs>
   )
 }
+
+const styles = StyleSheet.create({
+  uploadButtonWrapper: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+    maxWidth: 72,
+  },
+  uploadButton: {
+    alignItems: 'center',
+    backgroundColor: '#14351D',
+    borderRadius: 18,
+    elevation: 6,
+    height: 56,
+    justifyContent: 'center',
+    shadowColor: '#14351D',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    width: 56,
+  },
+})
