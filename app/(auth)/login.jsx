@@ -101,17 +101,44 @@ export default function Login() {
             <Pressable
               accessibilityRole="button"
               onPress={handleSubmit}
+              disabled={loading}
               style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
             >
-              <Text style={styles.primaryButtonText}>{loading ? 'Logging in...' : 'Log in'}</Text>
+              <Text style={styles.primaryButtonText}>{loading ? 'Logging in...' : 'Sign In'}</Text>
               {!loading && <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />}
             </Pressable>
+
+            <View style={styles.dividerRow}>
+              <View style={styles.dividerLine} />
+              <Text style={styles.dividerText}>Or continue with</Text>
+              <View style={styles.dividerLine} />
+            </View>
+
+            <View style={styles.socialButtons}>
+              <Pressable
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.socialButton, pressed && styles.pressed]}
+                onPress={() => setErrors({ form: 'Google Sign-In is being initialized.' })}
+              >
+                <Ionicons name="logo-google" size={18} color="#EA4335" />
+                <Text style={styles.socialButtonText}>Continue with Google</Text>
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.socialButton, pressed && styles.pressed]}
+                onPress={() => setErrors({ form: 'Apple Sign-In is available on iOS devices.' })}
+              >
+                <Ionicons name="logo-apple" size={19} color="#000000" />
+                <Text style={styles.socialButtonText}>Continue with Apple</Text>
+              </Pressable>
+            </View>
           </View>
 
           <View style={styles.bottomPrompt}>
-            <Text style={styles.promptText}>New to Klaso?</Text>
+            <Text style={styles.promptText}>Don&apos;t have an account?</Text>
             <Pressable onPress={() => router.push('/(auth)/SignUp')}>
-              <Text style={styles.linkText}> Create an account</Text>
+              <Text style={styles.linkText}> Sign Up</Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -158,6 +185,22 @@ const styles = StyleSheet.create({
   success: { color: '#57a0ff', fontSize: 13 },
   primaryButton: { alignItems: 'center', backgroundColor: '#57a0ff', borderRadius: 14, flexDirection: 'row', gap: 10, height: 56, justifyContent: 'center', marginTop: 2 },
   primaryButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  dividerRow: { alignItems: 'center', flexDirection: 'row', gap: 12, marginVertical: 8 },
+  dividerLine: { backgroundColor: '#D7E4D9', flex: 1, height: 1 },
+  dividerText: { color: '#718178', fontSize: 12, fontWeight: '600' },
+  socialButtons: { gap: 12 },
+  socialButton: {
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderColor: '#D7E4D9',
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    height: 52,
+    justifyContent: 'center',
+  },
+  socialButtonText: { color: '#14351D', fontSize: 15, fontWeight: '700' },
   bottomPrompt: { alignItems: 'center', flexDirection: 'row', justifyContent: 'center', marginTop: 'auto', paddingTop: 38 },
   promptText: { color: '#5D6D61', fontSize: 14 },
   pressed: { opacity: 0.72 },

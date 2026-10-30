@@ -43,6 +43,7 @@ export default function ForgotPassword() {
     try {
       await sendPasswordResetEmail(auth, normalizedEmail)
       setSent(true)
+      router.push({ pathname: '/(auth)/email-sent', params: { email: normalizedEmail } })
     } catch (requestError) {
       const message = requestError.code === 'auth/user-not-found'
         ? 'No account was found with that email.'
