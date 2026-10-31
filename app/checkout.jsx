@@ -16,6 +16,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../firebase/config'
+import { useTheme } from '../context/ThemeContext'
 
 const PAYMENT_METHODS = [
   {
@@ -41,12 +42,13 @@ const PAYMENT_METHODS = [
 export default function CheckoutScreen() {
   const router = useRouter()
   const params = useLocalSearchParams()
+  const { colors, isDark } = useTheme()
 
   const courseId = params.id ? String(params.id) : '1'
-  const courseTitle = params.title || 'Mastering Algebra Basics & Linear Equations'
+  const courseTitle = params.title || 'Calculus 1A: Differential & Integral'
   const tutorName = params.tutor || 'Engr. Tunde Adeleke'
   const subject = params.subject || 'Mathematics'
-  const basePrice = params.price ? Number(params.price) : 12500
+  const basePrice = params.price ? Number(params.price) : 3500
 
   const [paymentMethod, setPaymentMethod] = useState('card')
   const [promoCode, setPromoCode] = useState('')
@@ -78,7 +80,7 @@ export default function CheckoutScreen() {
   const handlePay = async () => {
     setIsProcessing(true)
 
-    // Simulate payment transaction with delay
+    // Simulate Paystack payment transaction
     setTimeout(async () => {
       const generatedRef = `KLASO-${Math.floor(100000 + Math.random() * 900000)}`
       setTxnRef(generatedRef)
@@ -86,23 +88,49 @@ export default function CheckoutScreen() {
       try {
         const user = auth.currentUser
         if (user) {
-          // Record enrollment in Firestore
+          const dateStr = new Date().toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            year: 'numeric',
+          })
+
+          // 1. Record enrollment in Firestore
           await addDoc(collection(db, 'enrollments'), {
             userId: user.uid,
             courseId,
-            courseTitle,
+            title: courseTitle,
             tutor: tutorName,
             subject,
             amount: totalAmount,
             reference: generatedRef,
             status: 'completed',
-            progress: 0,
-            completedLessons: 0,
+            progress: 0.1,
+            completedLessons: 1,
+            totalLessons: 12,
+            nextLesson: 'Module 1: Getting Started',
             enrolledAt: serverTimestamp(),
+            lastAccessed: 'Just now',
+          })
+
+          // 2. Record transaction in Firestore
+          await addDoc(collection(db, 'transactions'), {
+            userId: user.uid,
+            reference: generatedRef,
+            courseTitle,
+            amount: totalAmount,
+            paymentMethod:
+              paymentMethod === 'card'
+                ? 'Debit Card (Paystack)'
+                : paymentMethod === 'transfer'
+                ? 'Bank Transfer'
+                : 'USSD Banking',
+            date: dateStr,
+            status: 'Completed',
+            createdAt: serverTimestamp(),
           })
         }
-      } catch {
-        // Continue even if offline
+      } catch (err) {
+        console.log('Error writing checkout to Firestore:', err)
       }
 
       setIsProcessing(false)
@@ -119,50 +147,101 @@ export default function CheckoutScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       {/* Header */}
-      <View style={styles.header}>
-        <Pressable onPress={() => router.back()} style={styles.backBtn} hitSlop={10}>
-          <Ionicons name="arrow-back" size={22} color="#14351D" />
+      <View
+        style={[
+          styles.header,
+          {
+            borderBottomColor: colors.border,
+            backgroundColor: colors.surface,
+          },
+        ]}
+      >
+        <Pressable
+          onPress={() => router.back()}
+          style={[
+            styles.backBtn,
+            { backgroundColor: isDark ? '#1C2920' : '#F5FAF5' },
+          ]}
+          hitSlop={10}
+        >
+          <Ionicons name="arrow-back" size={22} color={colors.text} />
         </Pressable>
-        <Text style={styles.headerTitle}>Order Checkout</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Order Checkout</Text>
         <View style={{ width: 40 }} />
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Order Summary Card */}
-        <View style={styles.summaryCard}>
+        <View
+          style={[
+            styles.summaryCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
           <View style={styles.badgeRow}>
-            <View style={styles.badge}>
-              <Text style={styles.badgeText}>{subject}</Text>
+            <View
+              style={[
+                styles.badge,
+                { backgroundColor: isDark ? '#14331C' : '#E8F5E9' },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.badgeText,
+                  { color: isDark ? '#4ADE80' : '#15803D' },
+                ]}
+              >
+                {subject}
+              </Text>
             </View>
-            <Text style={styles.guaranteePill}>Instant Access</Text>
+            <Text style={[styles.guaranteePill, { color: colors.textMuted }]}>
+              Instant Access
+            </Text>
           </View>
-          <Text style={styles.courseTitle}>{courseTitle}</Text>
-          <Text style={styles.tutorText}>Instructor: {tutorName}</Text>
+          <Text style={[styles.courseTitle, { color: colors.text }]}>{courseTitle}</Text>
+          <Text style={[styles.tutorText, { color: colors.textMuted }]}>
+            Instructor: {tutorName}
+          </Text>
           <View style={styles.summaryPriceRow}>
-            <Text style={styles.summaryPriceLabel}>Course Fee</Text>
-            <Text style={styles.summaryPriceValue}>₦{basePrice.toLocaleString()}</Text>
+            <Text style={[styles.summaryPriceLabel, { color: colors.textMuted }]}>
+              Course Fee
+            </Text>
+            <Text style={[styles.summaryPriceValue, { color: colors.text }]}>
+              ₦{basePrice.toLocaleString()}
+            </Text>
           </View>
         </View>
 
         {/* Promo Code Input */}
         <View style={styles.promoContainer}>
-          <Text style={styles.sectionTitle}>Promo Code</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Promo Code</Text>
           <View style={styles.promoInputRow}>
             <TextInput
               value={promoCode}
               onChangeText={setPromoCode}
               placeholder="Enter code (e.g. KLASO20)"
-              placeholderTextColor="#8A9B8E"
+              placeholderTextColor={colors.textMuted}
               autoCapitalize="characters"
-              style={styles.promoInput}
+              style={[
+                styles.promoInput,
+                {
+                  backgroundColor: colors.inputBg,
+                  borderColor: colors.border,
+                  color: colors.text,
+                },
+              ]}
               editable={!discountApplied}
             />
             <Pressable
-              style={[styles.applyBtn, discountApplied && styles.applyBtnDisabled]}
+              style={[
+                styles.applyBtn,
+                { backgroundColor: colors.primary },
+                discountApplied && styles.applyBtnDisabled,
+              ]}
               onPress={handleApplyPromo}
               disabled={discountApplied}
             >
@@ -170,7 +249,7 @@ export default function CheckoutScreen() {
             </Pressable>
           </View>
           {discountApplied && (
-            <Text style={styles.discountSuccessText}>
+            <Text style={[styles.discountSuccessText, { color: colors.primary }]}>
               ✓ {discountPercent}% discount applied successfully (-₦{discountAmount.toLocaleString()})
             </Text>
           )}
@@ -178,30 +257,69 @@ export default function CheckoutScreen() {
 
         {/* Payment Methods */}
         <View style={styles.methodsContainer}>
-          <Text style={styles.sectionTitle}>Select Payment Method</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Select Payment Method
+          </Text>
           {PAYMENT_METHODS.map((method) => {
             const isSelected = paymentMethod === method.id
             return (
               <Pressable
                 key={method.id}
                 onPress={() => setPaymentMethod(method.id)}
-                style={[styles.methodCard, isSelected && styles.methodCardActive]}
+                style={[
+                  styles.methodCard,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: isSelected ? colors.primary : colors.border,
+                  },
+                ]}
               >
-                <View style={[styles.methodIconBox, isSelected && styles.methodIconBoxActive]}>
+                <View
+                  style={[
+                    styles.methodIconBox,
+                    {
+                      backgroundColor: isSelected
+                        ? isDark
+                          ? '#14331C'
+                          : '#E8F5E9'
+                        : isDark
+                        ? '#1C2920'
+                        : '#F3F4F6',
+                    },
+                  ]}
+                >
                   <Ionicons
                     name={method.icon}
                     size={22}
-                    color={isSelected ? '#15803D' : '#718178'}
+                    color={isSelected ? colors.primary : colors.textMuted}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={[styles.methodTitle, isSelected && styles.methodTitleActive]}>
+                  <Text
+                    style={[
+                      styles.methodTitle,
+                      { color: isSelected ? colors.primary : colors.text },
+                    ]}
+                  >
                     {method.title}
                   </Text>
-                  <Text style={styles.methodSubtitle}>{method.subtitle}</Text>
+                  <Text style={[styles.methodSubtitle, { color: colors.textMuted }]}>
+                    {method.subtitle}
+                  </Text>
                 </View>
-                <View style={[styles.radioCircle, isSelected && styles.radioCircleActive]}>
-                  {isSelected && <View style={styles.radioInner} />}
+                <View
+                  style={[
+                    styles.radioCircle,
+                    {
+                      borderColor: isSelected ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  {isSelected && (
+                    <View
+                      style={[styles.radioInner, { backgroundColor: colors.primary }]}
+                    />
+                  )}
                 </View>
               </Pressable>
             )
@@ -209,55 +327,94 @@ export default function CheckoutScreen() {
         </View>
 
         {/* Price Breakdown */}
-        <View style={styles.breakdownCard}>
-          <Text style={styles.breakdownHeading}>Price Details</Text>
+        <View
+          style={[
+            styles.breakdownCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.breakdownHeading, { color: colors.text }]}>
+            Price Details
+          </Text>
           <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownLabel}>Subtotal</Text>
-            <Text style={styles.breakdownValue}>₦{basePrice.toLocaleString()}</Text>
+            <Text style={[styles.breakdownLabel, { color: colors.textMuted }]}>
+              Subtotal
+            </Text>
+            <Text style={[styles.breakdownValue, { color: colors.text }]}>
+              ₦{basePrice.toLocaleString()}
+            </Text>
           </View>
 
           {discountApplied && (
             <View style={styles.breakdownRow}>
-              <Text style={[styles.breakdownLabel, { color: '#15803D' }]}>
+              <Text style={[styles.breakdownLabel, { color: colors.primary }]}>
                 Discount ({discountPercent}%)
               </Text>
-              <Text style={[styles.breakdownValue, { color: '#15803D' }]}>
+              <Text style={[styles.breakdownValue, { color: colors.primary }]}>
                 -₦{discountAmount.toLocaleString()}
               </Text>
             </View>
           )}
 
           <View style={styles.breakdownRow}>
-            <Text style={styles.breakdownLabel}>Value Added Tax (7.5%)</Text>
-            <Text style={styles.breakdownValue}>₦{vatAmount.toLocaleString()}</Text>
+            <Text style={[styles.breakdownLabel, { color: colors.textMuted }]}>
+              Value Added Tax (7.5%)
+            </Text>
+            <Text style={[styles.breakdownValue, { color: colors.text }]}>
+              ₦{vatAmount.toLocaleString()}
+            </Text>
           </View>
 
-          <View style={styles.divider} />
+          <View style={[styles.divider, { backgroundColor: colors.border }]} />
 
           <View style={styles.breakdownRow}>
-            <Text style={styles.totalLabel}>Total to Pay</Text>
-            <Text style={styles.totalValue}>₦{totalAmount.toLocaleString()}</Text>
+            <Text style={[styles.totalLabel, { color: colors.text }]}>Total to Pay</Text>
+            <Text style={[styles.totalValue, { color: colors.primary }]}>
+              ₦{totalAmount.toLocaleString()}
+            </Text>
           </View>
         </View>
 
         {/* Security badges */}
-        <View style={styles.securityBox}>
-          <Ionicons name="shield-checkmark" size={20} color="#15803D" />
-          <Text style={styles.securityText}>
+        <View
+          style={[
+            styles.securityBox,
+            {
+              backgroundColor: isDark ? '#14331C' : '#F0FDF4',
+              borderColor: colors.border,
+            },
+          ]}
+        >
+          <Ionicons name="shield-checkmark" size={20} color={colors.primary} />
+          <Text style={[styles.securityText, { color: colors.textSecondary }]}>
             Secured by Paystack. All financial transactions are protected with 256-bit bank encryption.
           </Text>
         </View>
       </ScrollView>
 
       {/* Pay CTA Bar */}
-      <View style={styles.bottomBar}>
+      <View
+        style={[
+          styles.bottomBar,
+          {
+            backgroundColor: colors.surface,
+            borderTopColor: colors.border,
+          },
+        ]}
+      >
         <View>
-          <Text style={styles.barLabel}>Total</Text>
-          <Text style={styles.barPrice}>₦{totalAmount.toLocaleString()}</Text>
+          <Text style={[styles.barLabel, { color: colors.textMuted }]}>Total</Text>
+          <Text style={[styles.barPrice, { color: colors.text }]}>
+            ₦{totalAmount.toLocaleString()}
+          </Text>
         </View>
 
         <Pressable
-          style={[styles.payButton, isProcessing && { opacity: 0.7 }]}
+          style={[
+            styles.payButton,
+            { backgroundColor: colors.primary },
+            isProcessing && { opacity: 0.7 },
+          ]}
           onPress={handlePay}
           disabled={isProcessing}
         >
@@ -275,21 +432,46 @@ export default function CheckoutScreen() {
       {/* Success Modal */}
       <Modal visible={showSuccessModal} animationType="fade" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.successModalCard}>
-            <View style={styles.successIconCircle}>
-              <Ionicons name="checkmark" size={44} color="#15803D" />
+          <View
+            style={[
+              styles.successModalCard,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View
+              style={[
+                styles.successIconCircle,
+                { backgroundColor: isDark ? '#14331C' : '#DCFCE7' },
+              ]}
+            >
+              <Ionicons name="checkmark" size={44} color={colors.primary} />
             </View>
-            <Text style={styles.successTitle}>Payment Successful!</Text>
-            <Text style={styles.successSub}>
-              You have been enrolled in {courseTitle}. A payment receipt was sent to your email.
+            <Text style={[styles.successTitle, { color: colors.text }]}>
+              Payment Successful!
+            </Text>
+            <Text style={[styles.successSub, { color: colors.textMuted }]}>
+              You have been enrolled in {courseTitle}. A payment receipt has been recorded in your account.
             </Text>
 
-            <View style={styles.refCard}>
-              <Text style={styles.refLabel}>Transaction Reference</Text>
-              <Text style={styles.refCode}>{txnRef}</Text>
+            <View
+              style={[
+                styles.refCard,
+                {
+                  backgroundColor: isDark ? '#1C2920' : '#F8FAF8',
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              <Text style={[styles.refLabel, { color: colors.textMuted }]}>
+                Transaction Reference
+              </Text>
+              <Text style={[styles.refCode, { color: colors.primary }]}>{txnRef}</Text>
             </View>
 
-            <Pressable style={styles.startLearningBtn} onPress={handleGoToLesson}>
+            <Pressable
+              style={[styles.startLearningBtn, { backgroundColor: colors.primary }]}
+              onPress={handleGoToLesson}
+            >
               <Text style={styles.startLearningText}>Start Learning Now</Text>
               <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
             </Pressable>
@@ -301,369 +483,309 @@ export default function CheckoutScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    backgroundColor: '#FFFFFF',
-    flex: 1,
-  },
+  safeArea: { flex: 1 },
   header: {
-    alignItems: 'center',
-    borderBottomColor: '#F0F2F1',
-    borderBottomWidth: 1,
-    flexDirection: 'row',
     height: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: 16,
+    borderBottomWidth: 1,
   },
   backBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     alignItems: 'center',
-    backgroundColor: '#F5FAF5',
-    borderRadius: 20,
-    height: 40,
     justifyContent: 'center',
-    width: 40,
   },
   headerTitle: {
-    color: '#14351D',
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
   },
+
   scrollContent: {
     padding: 16,
     paddingBottom: 110,
+    gap: 16,
   },
+
   summaryCard: {
-    backgroundColor: '#F7FAF7',
-    borderColor: '#E8EFEA',
     borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 20,
     padding: 16,
   },
   badgeRow: {
-    alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
   },
   badge: {
-    backgroundColor: '#E8F5E9',
-    borderRadius: 6,
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 3,
+    borderRadius: 6,
   },
   badgeText: {
-    color: '#15803D',
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
   },
   guaranteePill: {
-    color: '#15803D',
-    fontSize: 12,
-    fontWeight: '700',
+    fontSize: 11,
+    fontWeight: '600',
   },
   courseTitle: {
-    color: '#14351D',
     fontSize: 16,
     fontWeight: '800',
     lineHeight: 22,
   },
   tutorText: {
-    color: '#718178',
-    fontSize: 13,
+    fontSize: 12,
     marginTop: 4,
+    marginBottom: 12,
   },
   summaryPriceRow: {
-    alignItems: 'center',
-    borderTopColor: '#E8EFEA',
-    borderTopWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 12,
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: '#F0F2F1',
     paddingTop: 10,
   },
   summaryPriceLabel: {
-    color: '#718178',
     fontSize: 13,
   },
   summaryPriceValue: {
-    color: '#14351D',
     fontSize: 16,
     fontWeight: '800',
   },
-  promoContainer: {
-    marginBottom: 20,
-  },
+
+  promoContainer: {},
   sectionTitle: {
-    color: '#14351D',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
-    marginBottom: 10,
+    marginBottom: 8,
   },
   promoInputRow: {
     flexDirection: 'row',
     gap: 10,
   },
   promoInput: {
-    backgroundColor: '#F5FAF5',
-    borderColor: '#DFE7E1',
+    flex: 1,
+    height: 46,
     borderRadius: 12,
     borderWidth: 1,
-    color: '#14351D',
-    flex: 1,
-    fontSize: 14,
-    height: 48,
     paddingHorizontal: 14,
+    fontSize: 13,
+    fontWeight: '700',
   },
   applyBtn: {
-    alignItems: 'center',
-    backgroundColor: '#14351D',
+    paddingHorizontal: 18,
+    height: 46,
     borderRadius: 12,
-    height: 48,
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 20,
   },
   applyBtnDisabled: {
-    backgroundColor: '#8A9B8E',
+    opacity: 0.6,
   },
   applyBtnText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: '700',
   },
   discountSuccessText: {
-    color: '#15803D',
     fontSize: 12,
     fontWeight: '700',
     marginTop: 6,
   },
+
   methodsContainer: {
-    gap: 10,
-    marginBottom: 20,
+    gap: 8,
   },
   methodCard: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EFEA',
-    borderRadius: 14,
-    borderWidth: 1,
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 12,
+    borderRadius: 14,
+    borderWidth: 1.5,
     padding: 14,
   },
-  methodCardActive: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#15803D',
-  },
   methodIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     alignItems: 'center',
-    backgroundColor: '#F5FAF5',
-    borderRadius: 10,
-    height: 40,
     justifyContent: 'center',
-    width: 40,
-  },
-  methodIconBoxActive: {
-    backgroundColor: '#E8F5E9',
   },
   methodTitle: {
-    color: '#14351D',
     fontSize: 14,
     fontWeight: '700',
   },
-  methodTitleActive: {
-    color: '#15803D',
-  },
   methodSubtitle: {
-    color: '#718178',
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 2,
   },
   radioCircle: {
-    alignItems: 'center',
-    borderColor: '#CDE4D4',
+    width: 20,
+    height: 20,
     borderRadius: 10,
     borderWidth: 2,
-    height: 20,
+    alignItems: 'center',
     justifyContent: 'center',
-    width: 20,
-  },
-  radioCircleActive: {
-    borderColor: '#15803D',
   },
   radioInner: {
-    backgroundColor: '#15803D',
-    borderRadius: 5,
-    height: 10,
     width: 10,
+    height: 10,
+    borderRadius: 5,
   },
+
   breakdownCard: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EFEA',
     borderRadius: 16,
     borderWidth: 1,
-    marginBottom: 16,
     padding: 16,
+    gap: 10,
   },
   breakdownHeading: {
-    color: '#14351D',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '800',
-    marginBottom: 12,
+    marginBottom: 4,
   },
   breakdownRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginVertical: 4,
+    alignItems: 'center',
   },
   breakdownLabel: {
-    color: '#718178',
     fontSize: 13,
   },
   breakdownValue: {
-    color: '#14351D',
     fontSize: 13,
-    fontWeight: '600',
+    fontWeight: '700',
   },
   divider: {
-    backgroundColor: '#F0F2F1',
     height: 1,
-    marginVertical: 10,
+    marginVertical: 4,
   },
   totalLabel: {
-    color: '#14351D',
     fontSize: 15,
     fontWeight: '800',
   },
   totalValue: {
-    color: '#15803D',
     fontSize: 18,
     fontWeight: '900',
   },
+
   securityBox: {
+    flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
+    gap: 10,
     borderRadius: 12,
     borderWidth: 1,
-    flexDirection: 'row',
-    gap: 10,
     padding: 12,
   },
   securityText: {
-    color: '#166534',
+    fontSize: 11,
+    lineHeight: 16,
     flex: 1,
-    fontSize: 12,
-    lineHeight: 18,
   },
+
   bottomBar: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderTopColor: '#F0F2F1',
-    borderTopWidth: 1,
-    bottom: 0,
-    elevation: 10,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    left: 0,
-    paddingHorizontal: 20,
-    paddingVertical: 14,
     position: 'absolute',
+    bottom: 0,
+    left: 0,
     right: 0,
+    height: 76,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
   },
   barLabel: {
-    color: '#8A9B8E',
     fontSize: 11,
-    textTransform: 'uppercase',
+    fontWeight: '600',
   },
   barPrice: {
-    color: '#14351D',
     fontSize: 20,
     fontWeight: '900',
   },
   payButton: {
-    alignItems: 'center',
-    backgroundColor: '#15803D',
-    borderRadius: 14,
     flexDirection: 'row',
+    alignItems: 'center',
     gap: 8,
+    paddingHorizontal: 28,
     height: 48,
-    justifyContent: 'center',
-    paddingHorizontal: 32,
+    borderRadius: 14,
   },
   payButtonText: {
     color: '#FFFFFF',
     fontSize: 15,
     fontWeight: '800',
   },
+
   modalOverlay: {
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
     flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    alignItems: 'center',
     justifyContent: 'center',
-    padding: 24,
+    padding: 20,
   },
   successModalCard: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
-    padding: 24,
     width: '100%',
+    borderRadius: 24,
+    borderWidth: 1,
+    padding: 24,
+    alignItems: 'center',
   },
   successIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: 'center',
-    backgroundColor: '#F0FDF4',
-    borderRadius: 36,
-    height: 72,
     justifyContent: 'center',
     marginBottom: 16,
-    width: 72,
   },
   successTitle: {
-    color: '#14351D',
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
   },
   successSub: {
-    color: '#718178',
     fontSize: 13,
-    lineHeight: 20,
-    marginTop: 6,
     textAlign: 'center',
+    lineHeight: 18,
+    marginTop: 6,
+    marginBottom: 18,
   },
   refCard: {
-    alignItems: 'center',
-    backgroundColor: '#F8FAF8',
-    borderColor: '#DFE7E1',
+    width: '100%',
     borderRadius: 12,
     borderWidth: 1,
-    marginVertical: 18,
     padding: 12,
-    width: '100%',
+    alignItems: 'center',
+    marginBottom: 20,
   },
   refLabel: {
-    color: '#8A9B8E',
     fontSize: 11,
-    textTransform: 'uppercase',
   },
   refCode: {
-    color: '#14351D',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
     marginTop: 2,
+    letterSpacing: 1,
   },
   startLearningBtn: {
-    alignItems: 'center',
-    backgroundColor: '#15803D',
+    width: '100%',
+    height: 50,
     borderRadius: 14,
     flexDirection: 'row',
-    gap: 8,
-    height: 48,
+    alignItems: 'center',
     justifyContent: 'center',
-    width: '100%',
+    gap: 8,
   },
   startLearningText: {
     color: '#FFFFFF',
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: '800',
   },
 })

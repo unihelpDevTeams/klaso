@@ -2,6 +2,7 @@ import Ionicons from '@expo/vector-icons/Ionicons'
 import { useRouter } from 'expo-router'
 import React from 'react'
 import { Image, Pressable, StyleSheet, Text, TextInput, View } from 'react-native'
+import { useTheme } from '../../context/ThemeContext'
 
 export default function Header({
   title,
@@ -25,27 +26,37 @@ export default function Header({
   inputRef,
 }) {
   const router = useRouter()
+  const { colors, isDark } = useTheme()
 
   const handleBack = onBackPress || (() => router.back())
 
   return (
-    <View style={[styles.header, containerStyle]}>
+    <View
+      style={[
+        styles.header,
+        {
+          backgroundColor: colors.headerBg,
+          borderBottomColor: colors.border,
+        },
+        containerStyle,
+      ]}
+    >
       {searchMode ? (
-        <View style={styles.searchBox}>
-          <Ionicons name="search-outline" size={19} color="#718178" />
+        <View style={[styles.searchBox, { backgroundColor: colors.inputBg, borderColor: colors.inputBorder }]}>
+          <Ionicons name="search-outline" size={19} color={colors.textMuted} />
           <TextInput
             ref={inputRef}
             value={searchValue}
             onChangeText={onSearchChange}
             placeholder={searchPlaceholder}
-            placeholderTextColor="#8A9B8E"
-            style={styles.searchInput}
+            placeholderTextColor={colors.textMuted}
+            style={[styles.searchInput, { color: colors.text }]}
             returnKeyType="search"
             autoFocus
           />
           {onSearchClose && (
             <Pressable onPress={onSearchClose} accessibilityLabel="Close search" hitSlop={8}>
-              <Text style={styles.cancelText}>Cancel</Text>
+              <Text style={[styles.cancelText, { color: colors.primary }]}>Cancel</Text>
             </Pressable>
           )}
         </View>
@@ -53,8 +64,13 @@ export default function Header({
         <>
           <View style={styles.leftSection}>
             {showBack && (
-              <Pressable onPress={handleBack} accessibilityLabel="Go back" style={styles.actionButton} hitSlop={8}>
-                <Ionicons name="arrow-back" size={22} color="#14351D" />
+              <Pressable
+                onPress={handleBack}
+                accessibilityLabel="Go back"
+                style={[styles.actionButton, { backgroundColor: colors.inputBg }]}
+                hitSlop={8}
+              >
+                <Ionicons name="arrow-back" size={20} color={colors.text} />
               </Pressable>
             )}
 
@@ -70,22 +86,36 @@ export default function Header({
 
             {title && (
               <View style={styles.titleWrap}>
-                <Text style={[styles.title, titleStyle]}>{title}</Text>
-                {subtitle && <Text style={[styles.subtitle, subtitleStyle]}>{subtitle}</Text>}
+                <Text style={[styles.title, { color: colors.text }, titleStyle]}>{title}</Text>
+                {subtitle && (
+                  <Text style={[styles.subtitle, { color: colors.textMuted }, subtitleStyle]}>
+                    {subtitle}
+                  </Text>
+                )}
               </View>
             )}
           </View>
 
           <View style={styles.rightSection}>
             {showSearch && (
-              <Pressable onPress={onSearchPress} accessibilityLabel="Search" style={styles.actionButton} hitSlop={8}>
-                <Ionicons name="search-outline" size={22} color="#14351D" />
+              <Pressable
+                onPress={onSearchPress}
+                accessibilityLabel="Search"
+                style={[styles.actionButton, { backgroundColor: colors.inputBg }]}
+                hitSlop={8}
+              >
+                <Ionicons name="search-outline" size={20} color={colors.text} />
               </Pressable>
             )}
 
             {showNotifications && (
-              <Pressable onPress={onNotificationPress} accessibilityLabel="Open notifications" style={styles.actionButton} hitSlop={8}>
-                <Ionicons name="notifications-outline" size={22} color="#14351D" />
+              <Pressable
+                onPress={onNotificationPress}
+                accessibilityLabel="Open notifications"
+                style={[styles.actionButton, { backgroundColor: colors.inputBg }]}
+                hitSlop={8}
+              >
+                <Ionicons name="notifications-outline" size={20} color={colors.text} />
                 <View style={styles.notificationDot} />
               </Pressable>
             )}
@@ -101,7 +131,6 @@ export default function Header({
 const styles = StyleSheet.create({
   header: {
     alignItems: 'center',
-    borderBottomColor: '#EDEFEF',
     borderBottomWidth: 1,
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -119,7 +148,7 @@ const styles = StyleSheet.create({
   rightSection: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
   },
   brandRow: {
     alignItems: 'center',
@@ -127,51 +156,48 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   logo: {
-    height: 46,
-    width: 80,
-  },
-  brandText: {
-    color: '#14351D',
-    fontSize: 20,
-    fontWeight: '800',
+    height: 42,
+    width: 76,
   },
   titleWrap: {
     flexShrink: 1,
   },
   title: {
-    color: '#14351D',
     fontSize: 18,
     fontWeight: '800',
+    letterSpacing: -0.3,
   },
   subtitle: {
-    color: '#718178',
     fontSize: 12,
     marginTop: 2,
   },
   actionButton: {
     alignItems: 'center',
-    height: 40,
+    borderRadius: 12,
+    height: 38,
     justifyContent: 'center',
-    width: 40,
+    width: 38,
   },
   searchBox: {
     alignItems: 'center',
+    borderRadius: 12,
+    borderWidth: 1,
     flex: 1,
     flexDirection: 'row',
     gap: 10,
+    height: 44,
+    paddingHorizontal: 12,
   },
   searchInput: {
-    color: '#14351D',
     flex: 1,
     fontSize: 15,
   },
   cancelText: {
-    color: '#57a0ff',
     fontSize: 14,
     fontWeight: '700',
   },
   notificationDot: {
-    backgroundColor: '#F5A623',
+    backgroundColor: '#F59E0B',
     borderColor: '#FFFFFF',
     borderRadius: 5,
     borderWidth: 2,

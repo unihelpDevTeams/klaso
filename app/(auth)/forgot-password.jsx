@@ -3,10 +3,12 @@ import { router } from 'expo-router'
 import { sendPasswordResetEmail } from 'firebase/auth'
 import React, { useState } from 'react'
 import {
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -15,10 +17,12 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Header from '../components/header'
 import { auth } from '../../firebase/config'
+import { useTheme } from '../../context/ThemeContext'
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function ForgotPassword() {
+  const { colors, isDark } = useTheme()
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -45,9 +49,10 @@ export default function ForgotPassword() {
       setSent(true)
       router.push({ pathname: '/(auth)/email-sent', params: { email: normalizedEmail } })
     } catch (requestError) {
-      const message = requestError.code === 'auth/user-not-found'
-        ? 'No account was found with that email.'
-        : 'Unable to reset your password right now. Please try again.'
+      const message =
+        requestError.code === 'auth/user-not-found'
+          ? 'No account was found with that email.'
+          : 'Unable to reset your password right now. Please try again.'
       setError(message)
     } finally {
       setLoading(false)
@@ -55,53 +60,111 @@ export default function ForgotPassword() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.flex}>
-        <Header showBack title="Reset password" subtitle="Recover your account" containerStyle={styles.headerContainer} />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+      <KeyboardAvoidingView
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        style={styles.flex}
+      >
+        <Header
+          showBack
+          title="Reset Password"
+          subtitle="Recover your account"
+          containerStyle={{ backgroundColor: colors.surface }}
+        />
+
         <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
           <View style={styles.heading}>
-            <Text style={styles.eyebrow}>PASSWORD HELP</Text>
-            <Text style={styles.title}>Forgot your password?</Text>
-            <Text style={styles.subtitle}>We’ll send a reset link to the email tied to your account.</Text>
+            <View
+              style={[
+                styles.badge,
+                {
+                  backgroundColor: isDark ? '#14331C' : '#F0FDF4',
+                  borderColor: isDark ? '#1C4A2A' : '#BBF7D0',
+                },
+              ]}
+            >
+              <Ionicons name="key-outline" size={12} color={colors.primary} />
+              <Text style={[styles.badgeText, { color: colors.primary }]}>
+                PASSWORD RECOVERY
+              </Text>
+            </View>
+            <Text style={[styles.title, { color: colors.text }]}>Forgot your password?</Text>
+            <Text style={[styles.subtitle, { color: colors.textMuted }]}>
+              Enter your email and we’ll send you a password reset link to regain access.
+            </Text>
           </View>
 
           <View style={styles.form}>
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Email address</Text>
-              <TextInput
-                value={email}
-                onChangeText={(value) => {
-                  setEmail(value)
-                  setError('')
-                  setSent(false)
-                }}
-                placeholder="you@example.com"
-                keyboardType="email-address"
-                autoCapitalize="none"
-                style={[styles.input, error && styles.inputError]}
-                placeholderTextColor="#8A9B8E"
-              />
+              <Text style={[styles.label, { color: colors.text }]}>Email Address</Text>
+              <View
+                style={[
+                  styles.inputWrap,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.border,
+                  },
+                  error && styles.inputError,
+                ]}
+              >
+                <Ionicons
+                  name="mail-outline"
+                  size={18}
+                  color={colors.textMuted}
+                  style={styles.leftIcon}
+                />
+                <TextInput
+                  value={email}
+                  onChangeText={(value) => {
+                    setEmail(value)
+                    setError('')
+                    setSent(false)
+                  }}
+                  placeholder="you@example.com"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  style={[styles.input, { color: colors.text }]}
+                  placeholderTextColor={colors.textMuted}
+                />
+              </View>
               {!!error && <Text style={styles.error}>{error}</Text>}
             </View>
 
             {sent && (
-              <Text style={styles.success}>
-                A reset link has been sent. Check your inbox and follow the instructions.
-              </Text>
+              <View style={styles.successBox}>
+                <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
+                <Text style={[styles.successText, { color: colors.primary }]}>
+                  Reset link sent! Check your email inbox.
+                </Text>
+              </View>
             )}
 
             <Pressable
               accessibilityRole="button"
               onPress={handleSubmit}
-              style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+              disabled={loading}
+              style={[
+                styles.primaryButton,
+                { backgroundColor: colors.primary },
+                loading && styles.buttonDisabled,
+              ]}
             >
-              <Text style={styles.primaryButtonText}>{loading ? 'Sending...' : 'Send reset link'}</Text>
-              {!loading && <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />}
+              {loading ? (
+                <ActivityIndicator color="#FFFFFF" size="small" />
+              ) : (
+                <>
+                  <Text style={styles.primaryButtonText}>Send Reset Link</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                </>
+              )}
             </Pressable>
           </View>
 
           <Pressable onPress={() => router.push('/(auth)/login')} style={styles.backLink}>
-            <Text style={styles.linkText}>Back to login</Text>
+            <Text style={[styles.linkText, { color: colors.primary }]}>
+              Back to Login
+            </Text>
           </Pressable>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -110,43 +173,61 @@ export default function ForgotPassword() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F5FAF5' },
+  safeArea: { flex: 1 },
   flex: { flex: 1 },
-  headerContainer: { backgroundColor: '#F5FAF5', borderBottomWidth: 0, paddingTop: 12 },
-  container: { flexGrow: 1, padding: 24 },
-  heading: { marginTop: 24, marginBottom: 30 },
-  eyebrow: { color: '#57a0ff', fontSize: 12, fontWeight: '800', letterSpacing: 1.2, marginBottom: 12 },
-  title: { color: '#14351D', fontSize: 32, fontWeight: '800', lineHeight: 38 },
-  subtitle: { color: '#5D6D61', fontSize: 16, marginTop: 10 },
-  form: { gap: 18 },
-  fieldGroup: { gap: 8 },
-  label: { color: '#14351D', fontSize: 14, fontWeight: '700' },
-  input: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#D7E4D9',
-    borderRadius: 12,
+  container: { flexGrow: 1, padding: 20 },
+  heading: { marginTop: 12, marginBottom: 24 },
+  badge: {
+    alignItems: 'center',
+    borderRadius: 20,
     borderWidth: 1,
-    color: '#14351D',
-    fontSize: 16,
-    minHeight: 54,
-    paddingHorizontal: 16,
-    paddingVertical: 14,
+    flexDirection: 'row',
+    gap: 6,
+    marginBottom: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    width: 170,
   },
-  inputError: { borderColor: '#C24141' },
-  error: { color: '#B42318', fontSize: 13 },
-  success: { color: '#57a0ff', fontSize: 13, lineHeight: 20 },
+  badgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  title: { fontSize: 28, fontWeight: '900', letterSpacing: -0.4 },
+  subtitle: { fontSize: 14, marginTop: 6, lineHeight: 20 },
+
+  form: { gap: 16 },
+  fieldGroup: { gap: 6 },
+  label: { fontSize: 13, fontWeight: '700' },
+
+  inputWrap: {
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1.5,
+    flexDirection: 'row',
+    minHeight: 52,
+    paddingHorizontal: 14,
+  },
+  input: { flex: 1, fontSize: 14, paddingVertical: 12 },
+  leftIcon: { marginRight: 10 },
+  inputError: { borderColor: '#EF4444', backgroundColor: '#FEF2F2' },
+  error: { color: '#EF4444', fontSize: 12, fontWeight: '600' },
+
+  successBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  successText: { fontSize: 13, fontWeight: '700' },
+
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#57a0ff',
     borderRadius: 14,
     flexDirection: 'row',
-    gap: 10,
-    height: 56,
+    gap: 8,
+    height: 52,
     justifyContent: 'center',
-    marginTop: 8,
+    marginTop: 6,
   },
-  primaryButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
+  buttonDisabled: { opacity: 0.7 },
+  primaryButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+
   backLink: { alignItems: 'center', marginTop: 'auto', paddingTop: 30 },
-  linkText: { color: '#57a0ff', fontSize: 14, fontWeight: '700' },
-  pressed: { opacity: 0.72 },
+  linkText: { fontSize: 14, fontWeight: '800' },
 })

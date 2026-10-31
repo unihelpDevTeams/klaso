@@ -1,9 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useRouter } from 'expo-router'
-import { collection, getDocs, query, where } from 'firebase/firestore'
-import React, { useEffect, useMemo, useState } from 'react'
+import { collection, onSnapshot, query, where } from 'firebase/firestore'
+import React, { useEffect, useState } from 'react'
 import {
-  Alert,
+  ActivityIndicator,
   FlatList,
   Image,
   Modal,
@@ -17,6 +17,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../../firebase/config'
+import { useTheme } from '../../context/ThemeContext'
 import Header from '../components/header'
 
 const TABS = [
@@ -25,504 +26,557 @@ const TABS = [
   { id: 'history', label: 'History', icon: 'receipt-outline' },
 ]
 
-const DEFAULT_ENROLLED = [
-  {
-    id: '1',
-    title: 'Mastering Algebra Basics & Linear Equations',
-    tutor: 'Mr. Adebayo & Engr. Tunde',
-    subject: 'Mathematics',
-    progress: 0.68,
-    completedLessons: 8,
-    totalLessons: 12,
-    nextLesson: 'Solving Simultaneous Equations',
-    duration: '4h 30m total',
-    image: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=600&q=80',
-    lastAccessed: 'Yesterday',
-  },
-  {
-    id: '2',
-    title: 'Cellular Biology & Genetics Foundations',
-    tutor: 'Dr. Ngozi Eze',
-    subject: 'Science',
-    progress: 0.45,
-    completedLessons: 5,
-    totalLessons: 11,
-    nextLesson: 'Mendelian Genetics & Inheritance',
-    duration: '5h 15m total',
-    image: 'https://images.unsplash.com/photo-1532094349884-543bc11b234d?auto=format&fit=crop&w=600&q=80',
-    lastAccessed: '3 days ago',
-  },
-  {
-    id: '3',
-    title: 'Python for Beginners & Practical Projects',
-    tutor: 'Chukwuma Obi',
-    subject: 'Computer Science',
-    progress: 0.2,
-    completedLessons: 3,
-    totalLessons: 15,
-    nextLesson: 'Control Flow and Loops',
-    duration: '7h 45m total',
-    image: 'https://images.unsplash.com/photo-1526374965328-7f61d4dc18c5?auto=format&fit=crop&w=600&q=80',
-    lastAccessed: 'Oct 24, 2026',
-  },
-]
-
-const DEFAULT_SAVED = [
-  {
-    id: 'saved-1',
-    title: 'IELTS Academic Writing & Speaking Masterclass',
-    tutor: 'Mrs. Funmi Bello',
-    subject: 'Languages',
-    rating: 4.9,
-    reviews: 110,
-    price: 15000,
-    lessonsCount: 14,
-    duration: '6h 20m',
-    image: 'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=600&q=80',
-  },
-  {
-    id: 'saved-2',
-    title: 'Microeconomics & Financial Principles for WAEC',
-    tutor: 'Amina Yusuf',
-    subject: 'Business',
-    rating: 4.85,
-    reviews: 74,
-    price: 12000,
-    lessonsCount: 10,
-    duration: '4h 50m',
-    image: 'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?auto=format&fit=crop&w=600&q=80',
-  },
-]
-
-const DEFAULT_HISTORY = [
-  {
-    id: 'TXN-90412',
-    courseTitle: 'Mastering Algebra Basics & Linear Equations',
-    date: 'Oct 20, 2026',
-    amount: 14500,
-    paymentMethod: 'Paystack (Debit Card)',
-    status: 'Completed',
-    recipient: 'Klaso Online Academy',
-    vat: 1087,
-  },
-  {
-    id: 'TXN-88231',
-    courseTitle: 'Cellular Biology & Genetics Foundations',
-    date: 'Oct 14, 2026',
-    amount: 12000,
-    paymentMethod: 'Bank Transfer',
-    status: 'Completed',
-    recipient: 'Klaso Online Academy',
-    vat: 900,
-  },
-  {
-    id: 'TXN-79104',
-    courseTitle: 'Python for Beginners & Practical Projects',
-    date: 'Sep 29, 2026',
-    amount: 18500,
-    paymentMethod: 'Paystack (USSD)',
-    status: 'Completed',
-    recipient: 'Klaso Online Academy',
-    vat: 1387,
-  },
-]
-
 export default function PurchasesScreen() {
   const router = useRouter()
+  const { colors, isDark } = useTheme()
   const [activeTab, setActiveTab] = useState('enrolled')
-  const [enrolledCourses, setEnrolledCourses] = useState(DEFAULT_ENROLLED)
-  const [savedCourses, setSavedCourses] = useState(DEFAULT_SAVED)
-  const [purchaseHistory, setPurchaseHistory] = useState(DEFAULT_HISTORY)
+  const [enrolledCourses, setEnrolledCourses] = useState([])
+  const [savedCourses, setSavedCourses] = useState([])
+  const [purchaseHistory, setPurchaseHistory] = useState([])
+  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
   // Receipt Modal
   const [selectedReceipt, setSelectedReceipt] = useState(null)
 
-  const loadUserData = async () => {
-    try {
-      const user = auth.currentUser
-      if (!user) return
-
-      // Load enrollments from Firestore if available
-      const q = query(collection(db, 'enrollments'), where('userId', '==', user.uid))
-      const snapshot = await getDocs(q)
-      if (!snapshot.empty) {
-        const list = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-        setEnrolledCourses(list)
-      }
-    } catch {
-      // Fallback to default
-    }
-  }
-
   useEffect(() => {
-    loadUserData()
-  }, [])
+    const user = auth.currentUser
+    if (!user) {
+      setEnrolledCourses([])
+      setSavedCourses([])
+      setPurchaseHistory([])
+      setLoading(false)
+      return
+    }
+
+    setLoading(true)
+
+    // Listen to Enrollments
+    const qEnrollments = query(
+      collection(db, 'enrollments'),
+      where('userId', '==', user.uid)
+    )
+    const unsubEnrollments = onSnapshot(
+      qEnrollments,
+      (snapshot) => {
+        const list = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }))
+        setEnrolledCourses(list)
+        setLoading(false)
+      },
+      () => setLoading(false)
+    )
+
+    // Listen to Saved Courses
+    const qSaved = query(
+      collection(db, 'saved_courses'),
+      where('userId', '==', user.uid)
+    )
+    const unsubSaved = onSnapshot(
+      qSaved,
+      (snapshot) => {
+        const list = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }))
+        setSavedCourses(list)
+      },
+      () => {}
+    )
+
+    // Listen to Transactions
+    const qTransactions = query(
+      collection(db, 'transactions'),
+      where('userId', '==', user.uid)
+    )
+    const unsubTransactions = onSnapshot(
+      qTransactions,
+      (snapshot) => {
+        const list = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }))
+        setPurchaseHistory(list)
+      },
+      () => {}
+    )
+
+    return () => {
+      unsubEnrollments()
+      unsubSaved()
+      unsubTransactions()
+    }
+  }, [auth.currentUser])
 
   const onRefresh = async () => {
     setRefreshing(true)
-    await loadUserData()
-    setRefreshing(false)
+    setTimeout(() => setRefreshing(false), 800)
   }
 
-  const handleRemoveSaved = (id) => {
-    Alert.alert('Remove Course', 'Are you sure you want to remove this course from your saved list?', [
-      { text: 'Cancel', style: 'cancel' },
-      {
-        text: 'Remove',
-        style: 'destructive',
-        onPress: () => {
-          setSavedCourses((prev) => prev.filter((item) => item.id !== id))
-        },
-      },
-    ])
+  const renderEnrolledItem = ({ item }) => (
+    <Pressable
+      style={[
+        styles.courseCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+      onPress={() =>
+        router.push({
+          pathname: '/screens/lesson',
+          params: { courseId: item.courseId || item.id, title: item.title },
+        })
+      }
+    >
+      <Image
+        source={{
+          uri:
+            item.image ||
+            item.thumbnailUrl ||
+            'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=600&q=80',
+        }}
+        style={styles.courseThumb}
+      />
+      <View style={styles.courseContent}>
+        <View style={styles.courseTopRow}>
+          <Text
+            style={[
+              styles.subjectTag,
+              {
+                backgroundColor: isDark ? '#14331C' : '#E8F5E9',
+                color: isDark ? '#4ADE80' : '#15803D',
+              },
+            ]}
+          >
+            {item.subject || 'General'}
+          </Text>
+          <Text style={[styles.timeAgo, { color: colors.textMuted }]}>
+            {item.lastAccessed || 'Enrolled'}
+          </Text>
+        </View>
+
+        <Text style={[styles.courseTitle, { color: colors.text }]} numberOfLines={2}>
+          {item.title}
+        </Text>
+        <Text style={[styles.tutorName, { color: colors.textMuted }]}>
+          {item.tutor?.name || item.tutor || 'Verified Instructor'}
+        </Text>
+
+        <View style={styles.progressSection}>
+          <View style={styles.progressRow}>
+            <Text style={[styles.progressText, { color: colors.textSecondary }]}>
+              Lesson {item.completedLessons || 1} of {item.totalLessons || 12}
+            </Text>
+            <Text style={[styles.percentText, { color: colors.primary }]}>
+              {Math.round((item.progress || 0.35) * 100)}%
+            </Text>
+          </View>
+          <View
+            style={[
+              styles.progressBarTrack,
+              { backgroundColor: isDark ? '#233228' : '#E5E7EB' },
+            ]}
+          >
+            <View
+              style={[
+                styles.progressBarFill,
+                {
+                  width: `${Math.round((item.progress || 0.35) * 100)}%`,
+                  backgroundColor: colors.primary,
+                },
+              ]}
+            />
+          </View>
+        </View>
+
+        <View
+          style={[
+            styles.cardBottomRow,
+            { borderTopColor: isDark ? '#233228' : '#F3F4F6' },
+          ]}
+        >
+          <Text
+            style={[styles.nextLessonText, { color: colors.textSecondary }]}
+            numberOfLines={1}
+          >
+            Next: {item.nextLesson || 'Resume from last checkpoint'}
+          </Text>
+          <View style={[styles.resumeBtn, { backgroundColor: colors.primary }]}>
+            <Ionicons name="play" size={14} color="#FFFFFF" />
+            <Text style={styles.resumeBtnText}>Resume</Text>
+          </View>
+        </View>
+      </View>
+    </Pressable>
+  )
+
+  const renderSavedItem = ({ item }) => (
+    <Pressable
+      style={[
+        styles.courseCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+      onPress={() =>
+        router.push({
+          pathname: '/course-details',
+          params: { id: item.courseId || item.id, title: item.title },
+        })
+      }
+    >
+      <Image
+        source={{
+          uri:
+            item.image ||
+            item.thumbnailUrl ||
+            'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=600&q=80',
+        }}
+        style={styles.courseThumb}
+      />
+      <View style={styles.courseContent}>
+        <View style={styles.courseTopRow}>
+          <Text
+            style={[
+              styles.subjectTag,
+              {
+                backgroundColor: isDark ? '#14331C' : '#E8F5E9',
+                color: isDark ? '#4ADE80' : '#15803D',
+              },
+            ]}
+          >
+            {item.subject || 'Saved'}
+          </Text>
+          <View style={styles.savedRating}>
+            <Ionicons name="star" size={12} color="#F59E0B" />
+            <Text style={[styles.ratingVal, { color: colors.text }]}>
+              {item.rating || '4.9'}
+            </Text>
+          </View>
+        </View>
+
+        <Text style={[styles.courseTitle, { color: colors.text }]} numberOfLines={2}>
+          {item.title}
+        </Text>
+        <Text style={[styles.tutorName, { color: colors.textMuted }]}>
+          {item.tutor?.name || item.tutor || 'Instructor'}
+        </Text>
+
+        <View
+          style={[
+            styles.savedBottomRow,
+            { borderTopColor: isDark ? '#233228' : '#F3F4F6' },
+          ]}
+        >
+          <Text style={[styles.savedPrice, { color: colors.primary }]}>
+            ₦{item.price?.toLocaleString?.() || '3,500'}
+          </Text>
+          <View style={[styles.enrollBtn, { backgroundColor: colors.primary }]}>
+            <Text style={styles.enrollBtnText}>Enroll Now</Text>
+          </View>
+        </View>
+      </View>
+    </Pressable>
+  )
+
+  const renderHistoryItem = ({ item }) => (
+    <Pressable
+      style={[
+        styles.historyCard,
+        { backgroundColor: colors.card, borderColor: colors.border },
+      ]}
+      onPress={() => setSelectedReceipt(item)}
+    >
+      <View style={styles.receiptIconCol}>
+        <View
+          style={[
+            styles.receiptIconBadge,
+            { backgroundColor: isDark ? '#14331C' : '#DCFCE7' },
+          ]}
+        >
+          <Ionicons name="receipt-outline" size={20} color={colors.primary} />
+        </View>
+      </View>
+
+      <View style={styles.receiptMainInfo}>
+        <View style={styles.receiptTop}>
+          <Text style={[styles.receiptTxnId, { color: colors.textMuted }]}>
+            {item.reference || item.id}
+          </Text>
+          <View style={styles.statusSuccessBadge}>
+            <Ionicons name="checkmark-circle" size={12} color="#15803D" />
+            <Text style={styles.statusSuccessText}>Paid</Text>
+          </View>
+        </View>
+
+        <Text style={[styles.receiptCourseTitle, { color: colors.text }]} numberOfLines={1}>
+          {item.courseTitle || item.title || 'Course Enrollment'}
+        </Text>
+
+        <View style={styles.receiptMetaRow}>
+          <Text style={[styles.receiptDate, { color: colors.textMuted }]}>
+            {item.date || 'Recently'} • {item.paymentMethod || 'Paystack'}
+          </Text>
+          <Text style={[styles.receiptAmount, { color: colors.text }]}>
+            ₦{item.amount?.toLocaleString?.() || '3,500'}
+          </Text>
+        </View>
+      </View>
+    </Pressable>
+  )
+
+  const emptyDescriptions = {
+    enrolled: {
+      title: 'No Enrolled Courses Yet',
+      sub: 'Browse our catalog and enroll in university & exam preparation courses to start learning.',
+      btn: 'Discover Courses',
+      action: () => router.push('/(tabs)'),
+    },
+    saved: {
+      title: 'No Saved Courses',
+      sub: 'Tap the bookmark icon on any course details screen to save it here for later review.',
+      btn: 'Explore Catalog',
+      action: () => router.push('/(tabs)'),
+    },
+    history: {
+      title: 'No Payment History',
+      sub: 'All your course purchases, receipts, and invoices will be stored here securely.',
+      btn: 'Browse Tutors',
+      action: () => router.push('/(tabs)/tutors'),
+    },
   }
 
-  const handleContinueCourse = (course) => {
-    router.push({
-      pathname: '/screens/lesson',
-      params: { id: course.id, title: course.title },
-    })
-  }
-
-  const handleEnrollSaved = (course) => {
-    // Add to enrolled list and remove from saved
-    const newEnrolled = {
-      id: course.id,
-      title: course.title,
-      tutor: course.tutor,
-      subject: course.subject,
-      progress: 0.05,
-      completedLessons: 1,
-      totalLessons: course.lessonsCount || 10,
-      nextLesson: 'Module 1: Introduction',
-      duration: course.duration,
-      image: course.image,
-      lastAccessed: 'Just now',
-    }
-    setEnrolledCourses((prev) => [newEnrolled, ...prev])
-    setSavedCourses((prev) => prev.filter((item) => item.id !== course.id))
-    setActiveTab('enrolled')
-    Alert.alert('Enrollment Successful', `You are now enrolled in "${course.title}". Start learning right away!`)
-  }
+  const currentEmpty = emptyDescriptions[activeTab]
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
-      {/* Header */}
       <Header
         showBack={false}
         title="My Learning"
-        subtitle="Track enrolled courses, saved subjects & receipts"
+        subtitle="Enrolled courses, bookmarks & receipts"
       />
 
-      {/* Segmented Top Tabs */}
-      <View style={styles.segmentedContainer}>
+      {/* Tabs Switcher */}
+      <View
+        style={[
+          styles.tabBar,
+          {
+            backgroundColor: isDark ? colors.card : '#F3F4F6',
+            borderColor: colors.border,
+          },
+        ]}
+      >
         {TABS.map((tab) => {
           const isActive = activeTab === tab.id
-          let badgeCount = 0
-          if (tab.id === 'enrolled') badgeCount = enrolledCourses.length
-          if (tab.id === 'saved') badgeCount = savedCourses.length
-          if (tab.id === 'history') badgeCount = purchaseHistory.length
-
           return (
             <Pressable
               key={tab.id}
+              style={[
+                styles.tabItem,
+                isActive && [
+                  styles.tabItemActive,
+                  { backgroundColor: isDark ? '#1C2920' : '#FFFFFF' },
+                ],
+              ]}
               onPress={() => setActiveTab(tab.id)}
-              style={[styles.segmentButton, isActive && styles.segmentButtonActive]}
             >
               <Ionicons
                 name={tab.icon}
                 size={16}
-                color={isActive ? '#15803D' : '#718178'}
-                style={{ marginRight: 6 }}
+                color={isActive ? colors.primary : colors.textMuted}
               />
-              <Text style={[styles.segmentLabel, isActive && styles.segmentLabelActive]}>
+              <Text
+                style={[
+                  styles.tabItemText,
+                  {
+                    color: isActive ? colors.primary : colors.textMuted,
+                    fontWeight: isActive ? '700' : '500',
+                  },
+                ]}
+              >
                 {tab.label}
               </Text>
-              <View style={[styles.segmentBadge, isActive && styles.segmentBadgeActive]}>
-                <Text style={[styles.segmentBadgeText, isActive && styles.segmentBadgeTextActive]}>
-                  {badgeCount}
-                </Text>
-              </View>
             </Pressable>
           )
         })}
       </View>
 
-      {/* Content depending on Active Tab */}
-      <ScrollView
-        contentContainerStyle={styles.scrollContainer}
-        showsVerticalScrollIndicator={false}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#15803D']} />}
-      >
-        {/* ENROLLED TAB */}
-        {activeTab === 'enrolled' && (
-          <View style={styles.tabSection}>
-            {enrolledCourses.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <Ionicons name="school-outline" size={54} color="#B4C2B8" />
-                <Text style={styles.emptyTitle}>No courses in progress</Text>
-                <Text style={styles.emptySub}>
-                  You haven't enrolled in any courses yet. Explore our top courses and start learning today!
-                </Text>
-                <Pressable style={styles.browseButton} onPress={() => router.push('/(tabs)')}>
-                  <Text style={styles.browseButtonText}>Explore Courses</Text>
-                </Pressable>
+      {/* List Content */}
+      {loading ? (
+        <View style={styles.centerContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.textMuted }]}>
+            Loading your courses...
+          </Text>
+        </View>
+      ) : (
+        <FlatList
+          data={
+            activeTab === 'enrolled'
+              ? enrolledCourses
+              : activeTab === 'saved'
+              ? savedCourses
+              : purchaseHistory
+          }
+          keyExtractor={(item) => item.id}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={colors.primary}
+              colors={[colors.primary]}
+            />
+          }
+          ListEmptyComponent={
+            <View
+              style={[
+                styles.emptyState,
+                { backgroundColor: colors.card, borderColor: colors.border },
+              ]}
+            >
+              <View
+                style={[
+                  styles.emptyIconCircle,
+                  { backgroundColor: isDark ? '#14331C' : '#DCFCE7' },
+                ]}
+              >
+                <Ionicons
+                  name={
+                    activeTab === 'enrolled'
+                      ? 'book-outline'
+                      : activeTab === 'saved'
+                      ? 'bookmark-outline'
+                      : 'receipt-outline'
+                  }
+                  size={36}
+                  color={colors.primary}
+                />
               </View>
-            ) : (
-              enrolledCourses.map((course) => {
-                const percent = Math.round(course.progress * 100)
-                return (
-                  <View key={course.id} style={styles.enrolledCard}>
-                    <Image source={{ uri: course.image }} style={styles.courseImage} />
-                    <View style={styles.enrolledBody}>
-                      <View style={styles.badgeRow}>
-                        <View style={styles.subjectBadge}>
-                          <Text style={styles.subjectBadgeText}>{course.subject}</Text>
-                        </View>
-                        <Text style={styles.lastAccessedText}>Last seen: {course.lastAccessed}</Text>
-                      </View>
+              <Text style={[styles.emptyTitle, { color: colors.text }]}>
+                {currentEmpty.title}
+              </Text>
+              <Text style={[styles.emptySub, { color: colors.textMuted }]}>
+                {currentEmpty.sub}
+              </Text>
+              <Pressable
+                style={[styles.emptyBtn, { backgroundColor: colors.primary }]}
+                onPress={currentEmpty.action}
+              >
+                <Text style={styles.emptyBtnText}>{currentEmpty.btn}</Text>
+              </Pressable>
+            </View>
+          }
+          renderItem={
+            activeTab === 'enrolled'
+              ? renderEnrolledItem
+              : activeTab === 'saved'
+              ? renderSavedItem
+              : renderHistoryItem
+          }
+        />
+      )}
 
-                      <Text style={styles.courseTitle}>{course.title}</Text>
-                      <Text style={styles.tutorSubtitle}>Instructor: {course.tutor}</Text>
-
-                      {/* Progress bar */}
-                      <View style={styles.progressContainer}>
-                        <View style={styles.progressTrack}>
-                          <View style={[styles.progressFill, { width: `${percent}%` }]} />
-                        </View>
-                        <View style={styles.progressDetailsRow}>
-                          <Text style={styles.progressPercent}>{percent}% completed</Text>
-                          <Text style={styles.progressLessons}>
-                            {course.completedLessons}/{course.totalLessons} lessons
-                          </Text>
-                        </View>
-                      </View>
-
-                      {/* Next lesson info */}
-                      {course.nextLesson && (
-                        <View style={styles.nextLessonBox}>
-                          <Ionicons name="play-circle-outline" size={16} color="#15803D" />
-                          <Text style={styles.nextLessonText} numberOfLines={1}>
-                            Next: {course.nextLesson}
-                          </Text>
-                        </View>
-                      )}
-
-                      {/* Action */}
-                      <Pressable
-                        style={styles.continueButton}
-                        onPress={() => handleContinueCourse(course)}
-                        accessibilityLabel={`Continue ${course.title}`}
-                      >
-                        <Ionicons name="play" size={16} color="#FFFFFF" />
-                        <Text style={styles.continueButtonText}>Continue Learning</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                )
-              })
-            )}
-          </View>
-        )}
-
-        {/* SAVED TAB */}
-        {activeTab === 'saved' && (
-          <View style={styles.tabSection}>
-            {savedCourses.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <Ionicons name="bookmark-outline" size={54} color="#B4C2B8" />
-                <Text style={styles.emptyTitle}>Your wishlist is empty</Text>
-                <Text style={styles.emptySub}>
-                  Bookmark interesting courses from the home feed or tutors to review them here anytime.
-                </Text>
-                <Pressable style={styles.browseButton} onPress={() => router.push('/(tabs)')}>
-                  <Text style={styles.browseButtonText}>Find Courses to Save</Text>
-                </Pressable>
-              </View>
-            ) : (
-              savedCourses.map((course) => (
-                <View key={course.id} style={styles.savedCard}>
-                  <Image source={{ uri: course.image }} style={styles.savedThumbnail} />
-                  <View style={styles.savedContent}>
-                    <View style={styles.savedTopRow}>
-                      <View style={styles.subjectBadge}>
-                        <Text style={styles.subjectBadgeText}>{course.subject}</Text>
-                      </View>
-                      <Pressable onPress={() => handleRemoveSaved(course.id)} hitSlop={8}>
-                        <Ionicons name="bookmark" size={20} color="#15803D" />
-                      </Pressable>
-                    </View>
-
-                    <Text style={styles.savedTitle} numberOfLines={2}>
-                      {course.title}
-                    </Text>
-                    <Text style={styles.savedTutor}>By {course.tutor}</Text>
-
-                    <View style={styles.savedMetaRow}>
-                      <View style={styles.ratingBadge}>
-                        <Ionicons name="star" size={12} color="#F5A623" />
-                        <Text style={styles.ratingText}>{course.rating}</Text>
-                      </View>
-                      <Text style={styles.durationMeta}>• {course.duration}</Text>
-                      <Text style={styles.lessonsMeta}>• {course.lessonsCount} lessons</Text>
-                    </View>
-
-                    <View style={styles.savedActionRow}>
-                      <Text style={styles.savedPrice}>₦{course.price.toLocaleString()}</Text>
-                      <Pressable
-                        style={styles.enrollNowBtn}
-                        onPress={() => handleEnrollSaved(course)}
-                        accessibilityLabel={`Enroll in ${course.title}`}
-                      >
-                        <Text style={styles.enrollNowText}>Enroll Now</Text>
-                      </Pressable>
-                    </View>
-                  </View>
-                </View>
-              ))
-            )}
-          </View>
-        )}
-
-        {/* ORDER HISTORY TAB */}
-        {activeTab === 'history' && (
-          <View style={styles.tabSection}>
-            {purchaseHistory.length === 0 ? (
-              <View style={styles.emptyCard}>
-                <Ionicons name="receipt-outline" size={54} color="#B4C2B8" />
-                <Text style={styles.emptyTitle}>No transaction records</Text>
-                <Text style={styles.emptySub}>
-                  When you purchase courses or tutor sessions, official invoices and payment receipts will appear here.
-                </Text>
-              </View>
-            ) : (
-              purchaseHistory.map((item) => (
-                <View key={item.id} style={styles.historyCard}>
-                  <View style={styles.historyTop}>
-                    <View style={styles.refWrap}>
-                      <Text style={styles.receiptRef}>{item.id}</Text>
-                      <Text style={styles.receiptDate}>{item.date}</Text>
-                    </View>
-                    <View style={styles.statusBadge}>
-                      <Ionicons name="checkmark-circle" size={14} color="#15803D" />
-                      <Text style={styles.statusText}>{item.status}</Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.historyTitle}>{item.courseTitle}</Text>
-
-                  <View style={styles.historyFooter}>
-                    <View>
-                      <Text style={styles.historyMethodLabel}>{item.paymentMethod}</Text>
-                      <Text style={styles.historyAmount}>₦{item.amount.toLocaleString()}</Text>
-                    </View>
-
-                    <Pressable
-                      style={styles.receiptButton}
-                      onPress={() => setSelectedReceipt(item)}
-                      accessibilityLabel={`View receipt for ${item.id}`}
-                    >
-                      <Ionicons name="document-text-outline" size={16} color="#15803D" />
-                      <Text style={styles.receiptButtonText}>View Receipt</Text>
-                    </Pressable>
-                  </View>
-                </View>
-              ))
-            )}
-          </View>
-        )}
-      </ScrollView>
-
-      {/* Modal: Official Receipt Details */}
+      {/* RECEIPT MODAL */}
       <Modal visible={!!selectedReceipt} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.receiptModal}>
-            <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Official Payment Receipt</Text>
-              <Pressable onPress={() => setSelectedReceipt(null)} hitSlop={10}>
-                <Ionicons name="close" size={24} color="#14351D" />
+          <View
+            style={[
+              styles.receiptSheet,
+              { backgroundColor: colors.card, borderColor: colors.border },
+            ]}
+          >
+            <View style={styles.receiptSheetHeader}>
+              <View>
+                <Text style={[styles.receiptSheetTitle, { color: colors.text }]}>
+                  Payment Receipt
+                </Text>
+                <Text style={[styles.receiptSheetSub, { color: colors.textMuted }]}>
+                  Official verified transaction
+                </Text>
+              </View>
+              <Pressable onPress={() => setSelectedReceipt(null)}>
+                <Ionicons name="close-circle" size={26} color={colors.textMuted} />
               </Pressable>
             </View>
 
             {selectedReceipt && (
               <ScrollView showsVerticalScrollIndicator={false}>
-                <View style={styles.receiptStampBox}>
-                  <View style={styles.receiptStampCircle}>
-                    <Ionicons name="checkmark-done" size={36} color="#15803D" />
+                <View
+                  style={[
+                    styles.receiptCardBox,
+                    {
+                      backgroundColor: isDark ? '#1C2920' : '#F9FAFB',
+                      borderColor: colors.border,
+                    },
+                  ]}
+                >
+                  <View style={styles.receiptHeaderRow}>
+                    <Text style={[styles.receiptBrand, { color: colors.primary }]}>
+                      KLASO ACADEMY
+                    </Text>
+                    <View style={styles.receiptPaidTag}>
+                      <Text style={styles.receiptPaidText}>CONFIRMED</Text>
+                    </View>
                   </View>
-                  <Text style={styles.receiptPaidAmount}>
-                    ₦{selectedReceipt.amount.toLocaleString()}
+
+                  <Text style={[styles.receiptTotalAmount, { color: colors.text }]}>
+                    ₦{selectedReceipt.amount?.toLocaleString?.() || '3,500'}
                   </Text>
-                  <Text style={styles.receiptPaymentSuccess}>Payment Successful</Text>
-                  <Text style={styles.receiptRefCode}>Ref: {selectedReceipt.id}</Text>
-                </View>
-
-                <View style={styles.receiptDivider} />
-
-                <View style={styles.invoiceRow}>
-                  <Text style={styles.invoiceLabel}>Issued To</Text>
-                  <Text style={styles.invoiceValue}>
-                    {auth.currentUser?.displayName || 'Registered Student'}
+                  <Text style={[styles.receiptItemTitle, { color: colors.textSecondary }]}>
+                    {selectedReceipt.courseTitle || selectedReceipt.title || 'Course Enrollment'}
                   </Text>
-                </View>
 
-                <View style={styles.invoiceRow}>
-                  <Text style={styles.invoiceLabel}>Item Purchased</Text>
-                  <Text style={[styles.invoiceValue, { maxWidth: '60%', textAlign: 'right' }]}>
-                    {selectedReceipt.courseTitle}
-                  </Text>
-                </View>
+                  <View
+                    style={[
+                      styles.receiptDivider,
+                      { backgroundColor: colors.border },
+                    ]}
+                  />
 
-                <View style={styles.invoiceRow}>
-                  <Text style={styles.invoiceLabel}>Transaction Date</Text>
-                  <Text style={styles.invoiceValue}>{selectedReceipt.date}</Text>
-                </View>
+                  <View style={styles.receiptDetailRow}>
+                    <Text style={[styles.detailKey, { color: colors.textMuted }]}>
+                      Transaction Reference
+                    </Text>
+                    <Text style={[styles.detailVal, { color: colors.text }]}>
+                      {selectedReceipt.reference || selectedReceipt.id}
+                    </Text>
+                  </View>
 
-                <View style={styles.invoiceRow}>
-                  <Text style={styles.invoiceLabel}>Payment Method</Text>
-                  <Text style={styles.invoiceValue}>{selectedReceipt.paymentMethod}</Text>
-                </View>
+                  <View style={styles.receiptDetailRow}>
+                    <Text style={[styles.detailKey, { color: colors.textMuted }]}>
+                      Payment Method
+                    </Text>
+                    <Text style={[styles.detailVal, { color: colors.text }]}>
+                      {selectedReceipt.paymentMethod || 'Paystack'}
+                    </Text>
+                  </View>
 
-                <View style={styles.invoiceRow}>
-                  <Text style={styles.invoiceLabel}>Issuer</Text>
-                  <Text style={styles.invoiceValue}>{selectedReceipt.recipient}</Text>
-                </View>
+                  <View style={styles.receiptDetailRow}>
+                    <Text style={[styles.detailKey, { color: colors.textMuted }]}>
+                      Date
+                    </Text>
+                    <Text style={[styles.detailVal, { color: colors.text }]}>
+                      {selectedReceipt.date || 'Recent'}
+                    </Text>
+                  </View>
 
-                <View style={styles.receiptDivider} />
-
-                <View style={styles.invoiceRow}>
-                  <Text style={styles.invoiceLabel}>Subtotal</Text>
-                  <Text style={styles.invoiceValue}>
-                    ₦{(selectedReceipt.amount - selectedReceipt.vat).toLocaleString()}
-                  </Text>
-                </View>
-
-                <View style={styles.invoiceRow}>
-                  <Text style={styles.invoiceLabel}>VAT & Processing</Text>
-                  <Text style={styles.invoiceValue}>₦{selectedReceipt.vat.toLocaleString()}</Text>
-                </View>
-
-                <View style={[styles.invoiceRow, { marginTop: 8 }]}>
-                  <Text style={[styles.invoiceLabel, { fontWeight: '800', color: '#14351D', fontSize: 16 }]}>
-                    Total Paid
-                  </Text>
-                  <Text style={[styles.invoiceValue, { fontWeight: '800', color: '#15803D', fontSize: 18 }]}>
-                    ₦{selectedReceipt.amount.toLocaleString()}
-                  </Text>
+                  <View style={styles.receiptDetailRow}>
+                    <Text style={[styles.detailKey, { color: colors.textMuted }]}>
+                      Customer Email
+                    </Text>
+                    <Text style={[styles.detailVal, { color: colors.text }]}>
+                      {auth.currentUser?.email || 'learner@klaso.app'}
+                    </Text>
+                  </View>
                 </View>
 
                 <Pressable
-                  style={styles.downloadReceiptBtn}
-                  onPress={() => {
-                    Alert.alert('Receipt Downloaded', 'Receipt has been saved to your downloads and sent to your email.')
-                    setSelectedReceipt(null)
-                  }}
+                  style={[styles.closeSheetBtn, { backgroundColor: colors.primary }]}
+                  onPress={() => setSelectedReceipt(null)}
                 >
-                  <Ionicons name="download-outline" size={18} color="#FFFFFF" style={{ marginRight: 8 }} />
-                  <Text style={styles.downloadReceiptText}>Download PDF Receipt</Text>
+                  <Text style={styles.closeSheetBtnText}>Done</Text>
                 </Pressable>
               </ScrollView>
             )}
@@ -534,460 +588,368 @@ export default function PurchasesScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    backgroundColor: '#FFFFFF',
-    flex: 1,
-  },
-  segmentedContainer: {
-    backgroundColor: '#F5FAF5',
-    borderColor: '#E2EBE4',
-    borderRadius: 14,
-    borderWidth: 1,
+  safeArea: { flex: 1 },
+
+  tabBar: {
     flexDirection: 'row',
     marginHorizontal: 16,
-    marginVertical: 12,
+    marginTop: 10,
+    marginBottom: 14,
+    borderRadius: 14,
+    borderWidth: 1,
     padding: 4,
   },
-  segmentButton: {
-    alignItems: 'center',
-    borderRadius: 10,
+  tabItem: {
     flex: 1,
     flexDirection: 'row',
+    alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 10,
+    gap: 6,
+    paddingVertical: 9,
+    borderRadius: 10,
   },
-  segmentButtonActive: {
-    backgroundColor: '#FFFFFF',
-    elevation: 2,
-    shadowColor: '#14351D',
-    shadowOffset: { width: 0, height: 2 },
+  tabItemActive: {
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
-    shadowRadius: 4,
-  },
-  segmentLabel: {
-    color: '#718178',
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  segmentLabelActive: {
-    color: '#15803D',
-    fontWeight: '800',
-  },
-  segmentBadge: {
-    backgroundColor: '#E8EFEA',
-    borderRadius: 10,
-    marginLeft: 6,
-    paddingHorizontal: 6,
-    paddingVertical: 1,
-  },
-  segmentBadgeActive: {
-    backgroundColor: '#E8F5E9',
-  },
-  segmentBadgeText: {
-    color: '#718178',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  segmentBadgeTextActive: {
-    color: '#15803D',
-  },
-  scrollContainer: {
-    padding: 16,
-    paddingBottom: 40,
-  },
-  tabSection: {
-    gap: 16,
-  },
-  emptyCard: {
-    alignItems: 'center',
-    backgroundColor: '#FAFCFA',
-    borderColor: '#E8EFEA',
-    borderRadius: 20,
-    borderWidth: 1,
-    marginTop: 30,
-    padding: 30,
-  },
-  emptyTitle: {
-    color: '#14351D',
-    fontSize: 18,
-    fontWeight: '800',
-    marginTop: 14,
-  },
-  emptySub: {
-    color: '#718178',
-    fontSize: 14,
-    lineHeight: 22,
-    marginTop: 6,
-    textAlign: 'center',
-  },
-  browseButton: {
-    backgroundColor: '#15803D',
-    borderRadius: 12,
-    marginTop: 18,
-    paddingHorizontal: 20,
-    paddingVertical: 12,
-  },
-  browseButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  enrolledCard: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EFEA',
-    borderRadius: 18,
-    borderWidth: 1,
+    shadowRadius: 3,
     elevation: 2,
-    overflow: 'hidden',
-    shadowColor: '#14351D',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
   },
-  courseImage: {
-    backgroundColor: '#E8F5E9',
-    height: 140,
-    width: '100%',
-  },
-  enrolledBody: {
-    padding: 16,
-  },
-  badgeRow: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
-  },
-  subjectBadge: {
-    backgroundColor: '#E8F5E9',
-    borderRadius: 6,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  subjectBadgeText: {
-    color: '#15803D',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  lastAccessedText: {
-    color: '#8A9B8E',
-    fontSize: 12,
-  },
-  courseTitle: {
-    color: '#14351D',
-    fontSize: 16,
-    fontWeight: '800',
-    lineHeight: 22,
-  },
-  tutorSubtitle: {
-    color: '#718178',
+  tabItemText: {
     fontSize: 13,
-    marginTop: 4,
   },
-  progressContainer: {
-    marginTop: 14,
-  },
-  progressTrack: {
-    backgroundColor: '#EAEFEA',
-    borderRadius: 4,
-    height: 7,
-    overflow: 'hidden',
-    width: '100%',
-  },
-  progressFill: {
-    backgroundColor: '#15803D',
-    borderRadius: 4,
-    height: '100%',
-  },
-  progressDetailsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 6,
-  },
-  progressPercent: {
-    color: '#15803D',
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  progressLessons: {
-    color: '#718178',
-    fontSize: 12,
-  },
-  nextLessonBox: {
-    alignItems: 'center',
-    backgroundColor: '#F5FAF5',
-    borderRadius: 10,
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  nextLessonText: {
-    color: '#14351D',
+
+  centerContainer: {
     flex: 1,
-    fontSize: 13,
-    fontWeight: '600',
-  },
-  continueButton: {
     alignItems: 'center',
-    backgroundColor: '#15803D',
-    borderRadius: 14,
-    flexDirection: 'row',
-    gap: 8,
-    height: 46,
     justifyContent: 'center',
-    marginTop: 16,
+    paddingTop: 80,
   },
-  continueButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontWeight: '700',
+  loadingText: {
+    marginTop: 12,
+    fontSize: 13,
   },
-  savedCard: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EFEA',
+
+  listContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 40,
+    gap: 14,
+  },
+
+  courseCard: {
     borderRadius: 16,
     borderWidth: 1,
-    flexDirection: 'row',
-    gap: 12,
-    padding: 12,
+    overflow: 'hidden',
   },
-  savedThumbnail: {
-    backgroundColor: '#E8F5E9',
-    borderRadius: 12,
-    height: 100,
-    width: 90,
+  courseThumb: {
+    height: 120,
+    width: '100%',
+    backgroundColor: '#0F1A13',
   },
-  savedContent: {
-    flex: 1,
-    justifyContent: 'space-between',
+  courseContent: {
+    padding: 14,
   },
-  savedTopRow: {
-    alignItems: 'center',
+  courseTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  savedTitle: {
-    color: '#14351D',
-    fontSize: 14,
-    fontWeight: '800',
-    marginTop: 4,
-  },
-  savedTutor: {
-    color: '#718178',
-    fontSize: 12,
-    marginTop: 2,
-  },
-  savedMetaRow: {
     alignItems: 'center',
-    flexDirection: 'row',
-    gap: 4,
-    marginTop: 4,
+    marginBottom: 6,
   },
-  ratingBadge: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 2,
-  },
-  ratingText: {
-    color: '#14351D',
+  subjectTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
     fontSize: 11,
     fontWeight: '700',
   },
-  durationMeta: {
-    color: '#718178',
+  timeAgo: {
     fontSize: 11,
   },
-  lessonsMeta: {
-    color: '#718178',
-    fontSize: 11,
+  courseTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    lineHeight: 20,
   },
-  savedActionRow: {
-    alignItems: 'center',
+  tutorName: {
+    fontSize: 12,
+    marginTop: 4,
+  },
+
+  progressSection: {
+    marginTop: 12,
+  },
+  progressRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginTop: 8,
+    marginBottom: 4,
+  },
+  progressText: {
+    fontSize: 11,
+  },
+  percentText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  progressBarTrack: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+
+  cardBottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    borderTopWidth: 1,
+    paddingTop: 10,
+  },
+  nextLessonText: {
+    fontSize: 12,
+    flex: 1,
+    marginRight: 10,
+  },
+  resumeBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  resumeBtnText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+
+  savedRating: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+  },
+  ratingVal: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  savedBottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 12,
+    borderTopWidth: 1,
+    paddingTop: 10,
   },
   savedPrice: {
-    color: '#15803D',
     fontSize: 15,
     fontWeight: '800',
   },
-  enrollNowBtn: {
-    backgroundColor: '#15803D',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+  enrollBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 8,
   },
-  enrollNowText: {
+  enrollBtnText: {
     color: '#FFFFFF',
     fontSize: 12,
     fontWeight: '700',
   },
+
   historyCard: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EFEA',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
     borderRadius: 16,
     borderWidth: 1,
-    padding: 16,
+    padding: 14,
   },
-  historyTop: {
+  receiptIconCol: {
+    justifyContent: 'center',
+  },
+  receiptIconBadge: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
+    justifyContent: 'center',
+  },
+  receiptMainInfo: {
+    flex: 1,
+  },
+  receiptTop: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
   },
-  refWrap: {
-    gap: 2,
+  receiptTxnId: {
+    fontSize: 11,
+    fontWeight: '600',
   },
-  receiptRef: {
-    color: '#14351D',
-    fontSize: 14,
+  statusSuccessBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  statusSuccessText: {
+    color: '#15803D',
+    fontSize: 10,
     fontWeight: '800',
+  },
+  receiptCourseTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  receiptMetaRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
   receiptDate: {
-    color: '#8A9B8E',
     fontSize: 12,
   },
-  statusBadge: {
-    alignItems: 'center',
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
-    borderRadius: 8,
-    borderWidth: 1,
-    flexDirection: 'row',
-    gap: 4,
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-  },
-  statusText: {
-    color: '#15803D',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  historyTitle: {
-    color: '#374151',
+  receiptAmount: {
     fontSize: 14,
-    fontWeight: '600',
-    marginTop: 10,
-  },
-  historyFooter: {
-    alignItems: 'center',
-    borderTopColor: '#F0F4F1',
-    borderTopWidth: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 12,
-    paddingTop: 10,
-  },
-  historyMethodLabel: {
-    color: '#8A9B8E',
-    fontSize: 11,
-  },
-  historyAmount: {
-    color: '#14351D',
-    fontSize: 16,
     fontWeight: '800',
   },
-  receiptButton: {
-    alignItems: 'center',
-    borderColor: '#CDE4D4',
-    borderRadius: 10,
+
+  emptyState: {
+    borderRadius: 18,
     borderWidth: 1,
-    flexDirection: 'row',
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    padding: 30,
+    alignItems: 'center',
+    marginTop: 20,
   },
-  receiptButtonText: {
-    color: '#15803D',
-    fontSize: 12,
+  emptyIconCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 14,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    textAlign: 'center',
+    marginBottom: 6,
+  },
+  emptySub: {
+    fontSize: 13,
+    textAlign: 'center',
+    lineHeight: 18,
+    maxWidth: 280,
+    marginBottom: 18,
+  },
+  emptyBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 12,
+  },
+  emptyBtnText: {
+    color: '#FFFFFF',
+    fontSize: 13,
     fontWeight: '700',
   },
+
+  // Modal
   modalOverlay: {
-    backgroundColor: 'rgba(0,0,0,0.5)',
     flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
     justifyContent: 'flex-end',
   },
-  receiptModal: {
-    backgroundColor: '#FFFFFF',
+  receiptSheet: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
+    borderTopWidth: 1,
+    padding: 24,
+    paddingBottom: 40,
     maxHeight: '85%',
-    padding: 20,
   },
-  modalHeader: {
-    alignItems: 'center',
-    borderBottomColor: '#F0F2F1',
-    borderBottomWidth: 1,
+  receiptSheetHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingBottom: 14,
+    alignItems: 'center',
+    marginBottom: 16,
   },
-  modalTitle: {
-    color: '#14351D',
+  receiptSheetTitle: {
     fontSize: 18,
     fontWeight: '800',
   },
-  receiptStampBox: {
-    alignItems: 'center',
-    paddingVertical: 20,
-  },
-  receiptStampCircle: {
-    alignItems: 'center',
-    backgroundColor: '#F0FDF4',
-    borderRadius: 36,
-    height: 72,
-    justifyContent: 'center',
-    marginBottom: 12,
-    width: 72,
-  },
-  receiptPaidAmount: {
-    color: '#14351D',
-    fontSize: 26,
-    fontWeight: '900',
-  },
-  receiptPaymentSuccess: {
-    color: '#15803D',
-    fontSize: 14,
-    fontWeight: '700',
-    marginTop: 4,
-  },
-  receiptRefCode: {
-    color: '#8A9B8E',
+  receiptSheetSub: {
     fontSize: 12,
     marginTop: 2,
   },
-  receiptDivider: {
-    backgroundColor: '#F0F4F1',
-    height: 1,
-    marginVertical: 14,
+  receiptCardBox: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 18,
+    marginBottom: 20,
   },
-  invoiceRow: {
+  receiptHeaderRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginVertical: 6,
+    alignItems: 'center',
+    marginBottom: 12,
   },
-  invoiceLabel: {
-    color: '#718178',
+  receiptBrand: {
     fontSize: 13,
+    fontWeight: '900',
+    letterSpacing: 1,
   },
-  invoiceValue: {
-    color: '#14351D',
+  receiptPaidTag: {
+    backgroundColor: '#DCFCE7',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  receiptPaidText: {
+    color: '#15803D',
+    fontSize: 10,
+    fontWeight: '800',
+  },
+  receiptTotalAmount: {
+    fontSize: 28,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  receiptItemTitle: {
     fontSize: 13,
     fontWeight: '600',
+    marginBottom: 14,
   },
-  downloadReceiptBtn: {
-    alignItems: 'center',
-    backgroundColor: '#15803D',
-    borderRadius: 14,
+  receiptDivider: {
+    height: 1,
+    marginBottom: 14,
+  },
+  receiptDetailRow: {
     flexDirection: 'row',
-    height: 50,
-    justifyContent: 'center',
+    justifyContent: 'space-between',
     marginBottom: 10,
-    marginTop: 24,
   },
-  downloadReceiptText: {
+  detailKey: {
+    fontSize: 12,
+  },
+  detailVal: {
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  closeSheetBtn: {
+    height: 48,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  closeSheetBtnText: {
     color: '#FFFFFF',
     fontSize: 14,
     fontWeight: '700',

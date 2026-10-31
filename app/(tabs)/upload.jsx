@@ -3,14 +3,16 @@ import { useRouter } from 'expo-router'
 import { onAuthStateChanged } from 'firebase/auth'
 import { doc, onSnapshot } from 'firebase/firestore'
 import React, { useEffect, useState } from 'react'
-import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native'
+import { ActivityIndicator, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../../firebase/config'
+import { useTheme } from '../../context/ThemeContext'
 import Header from '../components/header'
 import UploadScreen from '../upload'
 
 export default function TabUploadScreen() {
   const router = useRouter()
+  const { colors, isDark } = useTheme()
   const [userProfile, setUserProfile] = useState(null)
   const [loading, setLoading] = useState(true)
 
@@ -51,8 +53,10 @@ export default function TabUploadScreen() {
 
   if (loading) {
     return (
-      <SafeAreaView style={styles.centerContainer}>
-        <ActivityIndicator size="large" color="#15803D" />
+      <SafeAreaView
+        style={[styles.centerContainer, { backgroundColor: colors.background }]}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
       </SafeAreaView>
     )
   }
@@ -64,36 +68,59 @@ export default function TabUploadScreen() {
 
   // If student learner, show clean educator studio promo
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <Header showBack={false} title="Creator Studio" subtitle="Educator course publishing" />
 
       <View style={styles.content}>
-        <View style={styles.iconCircle}>
-          <Ionicons name="videocam" size={44} color="#15803D" />
+        <View
+          style={[
+            styles.iconCircle,
+            {
+              backgroundColor: isDark ? '#14331C' : '#F0FDF4',
+              borderColor: isDark ? '#1C4A2A' : '#BBF7D0',
+            },
+          ]}
+        >
+          <Ionicons name="videocam" size={44} color={colors.primary} />
         </View>
 
-        <Text style={styles.title}>Become a Klaso Educator</Text>
-        <Text style={styles.description}>
+        <Text style={[styles.title, { color: colors.text }]}>Become a Klaso Educator</Text>
+        <Text style={[styles.description, { color: colors.textMuted }]}>
           The creator studio is reserved for certified tutors and educators. You can teach WAEC, JAMB, or university courses, reach thousands of ambitious students, and earn directly from lessons and live 1-on-1 sessions.
         </Text>
 
-        <View style={styles.perksCard}>
+        <View
+          style={[
+            styles.perksCard,
+            {
+              backgroundColor: colors.card,
+              borderColor: colors.border,
+            },
+          ]}
+        >
           <View style={styles.perkRow}>
-            <Ionicons name="checkmark-circle" size={18} color="#15803D" />
-            <Text style={styles.perkText}>Set your own teaching schedule & rates</Text>
+            <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+            <Text style={[styles.perkText, { color: colors.text }]}>
+              Set your own teaching schedule & rates
+            </Text>
           </View>
           <View style={styles.perkRow}>
-            <Ionicons name="checkmark-circle" size={18} color="#15803D" />
-            <Text style={styles.perkText}>Publish video courses & curriculum modules</Text>
+            <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+            <Text style={[styles.perkText, { color: colors.text }]}>
+              Publish video courses & curriculum modules
+            </Text>
           </View>
           <View style={styles.perkRow}>
-            <Ionicons name="checkmark-circle" size={18} color="#15803D" />
-            <Text style={styles.perkText}>Receive direct student bookings & payouts</Text>
+            <Ionicons name="checkmark-circle" size={18} color={colors.primary} />
+            <Text style={[styles.perkText, { color: colors.text }]}>
+              Receive direct student bookings & payouts
+            </Text>
           </View>
         </View>
 
         <Pressable
-          style={styles.primaryButton}
+          style={[styles.primaryButton, { backgroundColor: colors.primary }]}
           onPress={() => router.push('/become-tutor')}
           accessibilityLabel="Apply to Become a Tutor"
         >
@@ -106,10 +133,9 @@ export default function TabUploadScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1 },
   centerContainer: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
     flex: 1,
     justifyContent: 'center',
   },
@@ -121,8 +147,6 @@ const styles = StyleSheet.create({
   },
   iconCircle: {
     alignItems: 'center',
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
     borderRadius: 44,
     borderWidth: 2,
     height: 88,
@@ -131,22 +155,18 @@ const styles = StyleSheet.create({
     width: 88,
   },
   title: {
-    color: '#14351D',
     fontSize: 22,
     fontWeight: '900',
     marginBottom: 10,
     textAlign: 'center',
   },
   description: {
-    color: '#718178',
     fontSize: 14,
     lineHeight: 22,
     marginBottom: 24,
     textAlign: 'center',
   },
   perksCard: {
-    backgroundColor: '#F5FAF5',
-    borderColor: '#DFE7E1',
     borderRadius: 16,
     borderWidth: 1,
     gap: 12,
@@ -160,20 +180,17 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   perkText: {
-    color: '#14351D',
     fontSize: 13,
     fontWeight: '600',
   },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#15803D',
     borderRadius: 14,
     flexDirection: 'row',
     gap: 8,
     height: 52,
     justifyContent: 'center',
     width: '100%',
-    shadowColor: '#15803D',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.18,
     shadowRadius: 8,

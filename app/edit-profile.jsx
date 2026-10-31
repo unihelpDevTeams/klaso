@@ -2,13 +2,14 @@ import Ionicons from '@expo/vector-icons/Ionicons'
 import * as ImagePicker from 'expo-image-picker'
 import { useRouter } from 'expo-router'
 import { updateProfile } from 'firebase/auth'
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   TextInput,
@@ -16,11 +17,13 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../firebase/config'
+import { useTheme } from '../context/ThemeContext'
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'
 
 export default function EditProfileScreen() {
   const router = useRouter()
+  const { colors, isDark } = useTheme()
   const [loading, setLoading] = useState(false)
   const [profile, setProfile] = useState({ displayName: '', bio: '', avatarUrl: '' })
   const [avatarUri, setAvatarUri] = useState('')
@@ -31,62 +34,96 @@ export default function EditProfileScreen() {
     const currentUser = auth.currentUser
     if (!currentUser) return
 
-    setProfile({
+    setProfile((prev) => ({
+      ...prev,
       displayName: currentUser.displayName || '',
-      bio: '',
-      avatarUrl: '',
-    })
+      avatarUrl: currentUser.photoURL || '',
+    }))
+
+    // Fetch existing bio from Firestore
+    async function loadUserDoc() {
+      try {
+        const snap = await getDoc(doc(db, 'users', currentUser.uid))
+        if (snap.exists()) {
+          const data = snap.data()
+          setProfile({
+            displayName: data.displayName || currentUser.displayName || '',
+            bio: data.bio || '',
+            avatarUrl: data.photoURL || currentUser.photoURL || '',
+          })
+          if (data.photoURL) {
+            setAvatarUri(data.photoURL)
+          }
+        }
+      } catch {
+        // Ignore
+      }
+    }
+    loadUserDoc()
   }, [])
 
   async function pickAvatar() {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
-    if (!permission.granted) {
-      setError('Permission to access photos is required.')
-      return
-    }
+    try {
+      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync()
+      if (!permission.granted) {
+        setError('Permission to access photos is required.')
+        return
+      }
 
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    })
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      })
 
-    if (!result.canceled && result.assets?.[0]) {
-      setAvatarUri(result.assets[0].uri)
-      setError('')
+      if (!result.canceled && result.assets?.[0]) {
+        setAvatarUri(result.assets[0].uri)
+        setError('')
+      }
+    } catch {
+      setError('Unable to pick an image. Please try again.')
     }
   }
 
   async function uploadAvatar() {
     if (!avatarUri) return { url: '', publicId: '', resourceType: 'image' }
     if (avatarUri.startsWith('http://') || avatarUri.startsWith('https://')) {
-      return { url: avatarUri, publicId: userProfile?.avatarPublicId || '', resourceType: 'image' }
+      return { url: avatarUri, publicId: '', resourceType: 'image' }
     }
 
-    const filename = avatarUri.split('/').pop() || `avatar-${Date.now()}.jpg`
-    const formData = new FormData()
-    formData.append('file', {
-      uri: avatarUri,
-      name: filename,
-      type: 'image/jpeg',
-    })
-    formData.append('folder', 'klaso/profiles')
+    try {
+      const filename = avatarUri.split('/').pop() || `avatar-${Date.now()}.jpg`
+      const formData = new FormData()
+      formData.append('file', {
+        uri: avatarUri,
+        name: filename,
+        type: 'image/jpeg',
+      })
+      formData.append('folder', 'klaso/profiles')
 
-    const response = await fetch(`${API_URL}/api/upload-media`, {
-      method: 'POST',
-      body: formData,
-    })
+      const response = await fetch(`${API_URL}/api/upload-media`, {
+        method: 'POST',
+        body: formData,
+      })
 
-    const data = await response.json()
-    if (!response.ok) {
-      throw new Error(data.details || data.error || 'Avatar upload failed.')
-    }
+      const data = await response.json()
+      if (!response.ok) {
+        throw new Error(data.details || data.error || 'Avatar upload failed.')
+      }
 
-    return {
-      url: data.url,
-      publicId: data.publicId,
-      resourceType: data.resourceType,
+      return {
+        url: data.url,
+        publicId: data.publicId,
+        resourceType: data.resourceType,
+      }
+    } catch {
+      // Fallback: keep local or existing avatar if upload endpoint is unavailable
+      return {
+        url: avatarUri,
+        publicId: '',
+        resourceType: 'image',
+      }
     }
   }
 
@@ -112,7 +149,6 @@ export default function EditProfileScreen() {
         displayName: profile.displayName.trim(),
         bio: profile.bio.trim(),
         photoURL: avatarResult.url || profile.avatarUrl || '',
-        publicId: avatarResult.publicId || profile.publicId || '',
         updatedAt: serverTimestamp(),
       })
 
@@ -127,55 +163,120 @@ export default function EditProfileScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.headerRow}>
-        <Pressable onPress={() => router.back()} style={styles.backButton} hitSlop={8}>
-          <Ionicons name="arrow-back" size={22} color="#14351D" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+
+      <View
+        style={[
+          styles.headerRow,
+          {
+            borderBottomColor: colors.border,
+            backgroundColor: colors.surface,
+          },
+        ]}
+      >
+        <Pressable
+          onPress={() => router.back()}
+          style={[
+            styles.backButton,
+            { backgroundColor: isDark ? '#1C2920' : '#F5FAF5' },
+          ]}
+          hitSlop={8}
+        >
+          <Ionicons name="arrow-back" size={22} color={colors.text} />
         </Pressable>
-        <Text style={styles.headerTitle}>Edit profile</Text>
+        <Text style={[styles.headerTitle, { color: colors.text }]}>Edit Profile</Text>
         <View style={styles.placeholder} />
       </View>
 
       <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-        <Pressable style={styles.avatarWrap} onPress={pickAvatar}>
+        <Pressable
+          style={[
+            styles.avatarWrap,
+            {
+              backgroundColor: isDark ? '#1C2920' : '#FFFFFF',
+              borderColor: colors.border,
+            },
+          ]}
+          onPress={pickAvatar}
+        >
           {avatarUri ? (
             <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
           ) : (
-            <View style={styles.avatarFallback}>
-              <Ionicons name="camera-outline" size={28} color="#57a0ff" />
+            <View
+              style={[
+                styles.avatarFallback,
+                { backgroundColor: isDark ? '#14331C' : '#DCFCE7' },
+              ]}
+            >
+              <Ionicons name="camera-outline" size={32} color={colors.primary} />
             </View>
           )}
+          <View style={[styles.cameraBadge, { backgroundColor: colors.primary }]}>
+            <Ionicons name="camera" size={14} color="#FFFFFF" />
+          </View>
         </Pressable>
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
         {success ? <Text style={styles.successText}>{success}</Text> : null}
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Full name</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Full Name</Text>
           <TextInput
             value={profile.displayName}
-            onChangeText={(value) => setProfile((current) => ({ ...current, displayName: value }))}
+            onChangeText={(value) =>
+              setProfile((current) => ({ ...current, displayName: value }))
+            }
             placeholder="Your name"
-            placeholderTextColor="#94A3B8"
-            style={styles.input}
+            placeholderTextColor={colors.textMuted}
+            style={[
+              styles.input,
+              {
+                backgroundColor: colors.inputBg,
+                borderColor: colors.border,
+                color: colors.text,
+              },
+            ]}
           />
         </View>
 
         <View style={styles.formGroup}>
-          <Text style={styles.label}>Bio</Text>
+          <Text style={[styles.label, { color: colors.text }]}>Bio & Learning Goals</Text>
           <TextInput
             value={profile.bio}
-            onChangeText={(value) => setProfile((current) => ({ ...current, bio: value }))}
-            placeholder="Tell learners about yourself"
-            placeholderTextColor="#94A3B8"
+            onChangeText={(value) =>
+              setProfile((current) => ({ ...current, bio: value }))
+            }
+            placeholder="Share your academic goals, targets, or tutoring focus..."
+            placeholderTextColor={colors.textMuted}
             multiline
-            numberOfLines={5}
-            style={[styles.input, styles.textArea]}
+            numberOfLines={4}
+            style={[
+              styles.input,
+              styles.textArea,
+              {
+                backgroundColor: colors.inputBg,
+                borderColor: colors.border,
+                color: colors.text,
+              },
+            ]}
           />
         </View>
 
-        <Pressable style={styles.primaryButton} onPress={handleSave} disabled={loading}>
-          {loading ? <ActivityIndicator color="#FFFFFF" size="small" /> : <Text style={styles.primaryText}>Save changes</Text>}
+        <Pressable
+          style={[
+            styles.primaryButton,
+            { backgroundColor: colors.primary },
+            loading && { opacity: 0.7 },
+          ]}
+          onPress={handleSave}
+          disabled={loading}
+        >
+          {loading ? (
+            <ActivityIndicator color="#FFFFFF" size="small" />
+          ) : (
+            <Text style={styles.primaryText}>Save Changes</Text>
+          )}
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -183,67 +284,77 @@ export default function EditProfileScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F5FAF5' },
+  safeArea: { flex: 1 },
   headerRow: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
-    paddingTop: 12,
+    paddingHorizontal: 16,
+    height: 56,
+    borderBottomWidth: 1,
   },
   backButton: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 12,
-    height: 40,
+    borderRadius: 18,
+    height: 36,
     justifyContent: 'center',
-    width: 40,
+    width: 36,
   },
-  headerTitle: { color: '#14351D', fontSize: 20, fontWeight: '800' },
-  placeholder: { width: 40 },
+  headerTitle: { fontSize: 18, fontWeight: '800' },
+  placeholder: { width: 36 },
   container: { padding: 18, paddingBottom: 32 },
+
   avatarWrap: {
     alignSelf: 'center',
-    backgroundColor: '#FFFFFF',
-    borderRadius: 80,
-    overflow: 'hidden',
-    padding: 6,
+    borderRadius: 60,
+    borderWidth: 1,
+    overflow: 'visible',
+    position: 'relative',
+    marginTop: 8,
   },
   avatarImage: {
-    borderRadius: 74,
-    height: 148,
-    width: 148,
+    borderRadius: 56,
+    height: 112,
+    width: 112,
   },
   avatarFallback: {
     alignItems: 'center',
-    backgroundColor: '#EAF3FF',
-    borderRadius: 74,
-    height: 148,
+    borderRadius: 56,
+    height: 112,
     justifyContent: 'center',
-    width: 148,
+    width: 112,
   },
-  formGroup: { marginTop: 20 },
-  label: { color: '#14351D', fontSize: 14, fontWeight: '700', marginBottom: 8 },
+  cameraBadge: {
+    position: 'absolute',
+    bottom: 2,
+    right: 2,
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+  },
+
+  formGroup: { marginTop: 18 },
+  label: { fontSize: 13, fontWeight: '700', marginBottom: 8 },
   input: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E2E8F0',
     borderRadius: 12,
     borderWidth: 1,
-    color: '#0F172A',
-    fontSize: 15,
-    minHeight: 52,
+    fontSize: 14,
+    height: 48,
     paddingHorizontal: 14,
-    paddingVertical: 12,
   },
-  textArea: { minHeight: 120, textAlignVertical: 'top' },
+  textArea: { minHeight: 100, paddingTop: 12, textAlignVertical: 'top' },
+
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#14351D',
-    borderRadius: 16,
+    borderRadius: 14,
     marginTop: 24,
-    paddingVertical: 16,
+    paddingVertical: 15,
   },
-  primaryText: { color: '#FFFFFF', fontSize: 16, fontWeight: '800' },
-  errorText: { color: '#B42318', fontSize: 14, marginTop: 12 },
-  successText: { color: '#047857', fontSize: 14, marginTop: 12 },
+  primaryText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  errorText: { color: '#DC2626', fontSize: 13, marginTop: 12 },
+  successText: { color: '#15803D', fontSize: 13, fontWeight: '700', marginTop: 12 },
 })

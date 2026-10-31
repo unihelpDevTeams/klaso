@@ -6,6 +6,7 @@ import {
   ActivityIndicator,
   Pressable,
   ScrollView,
+  StatusBar,
   StyleSheet,
   Text,
   View,
@@ -13,9 +14,11 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import Header from '../components/header'
 import { auth } from '../../firebase/config'
+import { useTheme } from '../../context/ThemeContext'
 
 export default function EmailSent() {
   const { email } = useLocalSearchParams()
+  const { colors, isDark } = useTheme()
   const [resending, setResending] = useState(false)
   const [statusMessage, setStatusMessage] = useState('')
   const [isError, setIsError] = useState(false)
@@ -35,7 +38,7 @@ export default function EmailSent() {
       await sendPasswordResetEmail(auth, String(email))
       setIsError(false)
       setStatusMessage('A new reset link has been sent to your email!')
-    } catch (err) {
+    } catch {
       setIsError(true)
       setStatusMessage('Could not resend email. Please try again in a few minutes.')
     } finally {
@@ -44,32 +47,62 @@ export default function EmailSent() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <Header
         showBack
         title="Check your email"
         subtitle="Password reset link sent"
-        containerStyle={styles.headerContainer}
+        containerStyle={{ backgroundColor: colors.surface }}
       />
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.content}>
-          <View style={styles.iconCircle}>
-            <View style={styles.iconInner}>
-              <Ionicons name="mail-unread-outline" size={48} color="#15803D" />
+          <View
+            style={[
+              styles.iconCircle,
+              { backgroundColor: isDark ? '#14331C' : '#DCFCE7' },
+            ]}
+          >
+            <View
+              style={[
+                styles.iconInner,
+                { backgroundColor: isDark ? '#1C4A2A' : '#BBF7D0' },
+              ]}
+            >
+              <Ionicons name="mail-unread-outline" size={48} color={colors.primary} />
             </View>
           </View>
 
-          <Text style={styles.title}>Check your email</Text>
-          <Text style={styles.subtitle}>
+          <Text style={[styles.title, { color: colors.text }]}>Check your email</Text>
+          <Text style={[styles.subtitle, { color: colors.textMuted }]}>
             We&apos;ve sent a password reset link to:
           </Text>
           {email ? (
-            <Text style={styles.emailBadge}>{email}</Text>
+            <Text
+              style={[
+                styles.emailBadge,
+                {
+                  backgroundColor: isDark ? '#1C2920' : '#E8F5E9',
+                  color: isDark ? '#4ADE80' : '#15803D',
+                  borderColor: colors.border,
+                },
+              ]}
+            >
+              {email}
+            </Text>
           ) : null}
 
-          <View style={styles.noticeBox}>
-            <Ionicons name="information-circle-outline" size={18} color="#15803D" />
-            <Text style={styles.noticeText}>
+          <View
+            style={[
+              styles.noticeBox,
+              {
+                backgroundColor: isDark ? '#1C2920' : '#F0FDF4',
+                borderColor: colors.border,
+              },
+            ]}
+          >
+            <Ionicons name="information-circle-outline" size={18} color={colors.primary} />
+            <Text style={[styles.noticeText, { color: colors.textSecondary }]}>
               Didn&apos;t receive it? Check your spam or promotions folder, or click below to resend.
             </Text>
           </View>
@@ -84,7 +117,11 @@ export default function EmailSent() {
             accessibilityRole="button"
             onPress={handleResend}
             disabled={resending}
-            style={({ pressed }) => [styles.primaryButton, pressed && styles.pressed]}
+            style={[
+              styles.primaryButton,
+              { backgroundColor: colors.primary },
+              resending && { opacity: 0.7 },
+            ]}
           >
             {resending ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
@@ -99,10 +136,15 @@ export default function EmailSent() {
           <Pressable
             accessibilityRole="button"
             onPress={() => router.replace('/(auth)/login')}
-            style={({ pressed }) => [styles.secondaryButton, pressed && styles.pressed]}
+            style={[
+              styles.secondaryButton,
+              { borderColor: colors.border, backgroundColor: colors.surface },
+            ]}
           >
-            <Ionicons name="arrow-back" size={18} color="#14351D" />
-            <Text style={styles.secondaryButtonText}>Back to login</Text>
+            <Ionicons name="arrow-back" size={18} color={colors.text} />
+            <Text style={[styles.secondaryButtonText, { color: colors.text }]}>
+              Back to Login
+            </Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -111,15 +153,13 @@ export default function EmailSent() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#F5FAF5' },
-  headerContainer: { backgroundColor: '#F5FAF5', borderBottomWidth: 0, paddingTop: 12 },
+  safeArea: { flex: 1 },
   container: { flexGrow: 1, padding: 24, justifyContent: 'center' },
   content: { alignItems: 'center' },
   iconCircle: {
     width: 104,
     height: 104,
     borderRadius: 52,
-    backgroundColor: '#DCFCE7',
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: 24,
@@ -128,91 +168,81 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#BBF7D0',
     alignItems: 'center',
     justifyContent: 'center',
   },
   title: {
-    color: '#14351D',
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: '800',
     textAlign: 'center',
     marginBottom: 10,
   },
   subtitle: {
-    color: '#5D6D61',
-    fontSize: 15,
+    fontSize: 14,
     textAlign: 'center',
-    marginBottom: 6,
+    marginBottom: 12,
   },
   emailBadge: {
-    color: '#14351D',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '700',
-    backgroundColor: '#E8F4EB',
-    paddingHorizontal: 14,
-    paddingVertical: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
     borderRadius: 12,
-    marginBottom: 20,
+    borderWidth: 1,
+    overflow: 'hidden',
+    marginBottom: 24,
     textAlign: 'center',
   },
   noticeBox: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    backgroundColor: '#FFFFFF',
-    borderColor: '#D7E4D9',
+    gap: 10,
+    borderRadius: 14,
     borderWidth: 1,
-    borderRadius: 12,
     padding: 14,
-    marginBottom: 24,
+    marginBottom: 20,
+    width: '100%',
   },
   noticeText: {
-    color: '#5D6D61',
-    fontSize: 13,
     flex: 1,
+    fontSize: 12,
     lineHeight: 18,
   },
   statusText: {
     fontSize: 13,
-    marginBottom: 16,
-    textAlign: 'center',
     fontWeight: '600',
+    textAlign: 'center',
+    marginBottom: 16,
   },
+  errorText: { color: '#DC2626' },
   successText: { color: '#15803D' },
-  errorText: { color: '#B42318' },
   primaryButton: {
-    alignItems: 'center',
-    backgroundColor: '#15803D',
+    width: '100%',
+    height: 52,
     borderRadius: 14,
     flexDirection: 'row',
-    gap: 10,
-    height: 54,
+    alignItems: 'center',
     justifyContent: 'center',
-    width: '100%',
-    marginBottom: 14,
+    gap: 8,
+    marginBottom: 12,
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
   },
   secondaryButton: {
-    alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#D7E4D9',
-    borderWidth: 1,
-    borderRadius: 14,
-    flexDirection: 'row',
-    gap: 8,
-    height: 52,
-    justifyContent: 'center',
     width: '100%',
+    height: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
   },
   secondaryButtonText: {
-    color: '#14351D',
     fontSize: 15,
     fontWeight: '700',
   },
-  pressed: { opacity: 0.75 },
 })

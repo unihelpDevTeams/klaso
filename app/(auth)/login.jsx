@@ -17,11 +17,13 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth } from '../../firebase/config'
+import { useTheme } from '../../context/ThemeContext'
 import Header from '../components/header'
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function Login() {
+  const { colors, isDark } = useTheme()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -72,9 +74,14 @@ export default function Login() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <Header showBack title="Log In" subtitle="Welcome back to Klaso" containerStyle={styles.headerContainer} />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+      <Header
+        showBack
+        title="Log In"
+        subtitle="Welcome back to Klaso"
+        containerStyle={{ backgroundColor: colors.surface }}
+      />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -86,20 +93,46 @@ export default function Login() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.heading}>
-            <View style={styles.badge}>
-              <Ionicons name="sparkles" size={12} color="#15803D" />
-              <Text style={styles.badgeText}>WELCOME BACK</Text>
+            <View
+              style={[
+                styles.badge,
+                {
+                  backgroundColor: isDark ? '#14331C' : '#F0FDF4',
+                  borderColor: isDark ? '#1C4A2A' : '#BBF7D0',
+                },
+              ]}
+            >
+              <Ionicons name="sparkles" size={12} color={colors.primary} />
+              <Text style={[styles.badgeText, { color: colors.primary }]}>
+                WELCOME BACK
+              </Text>
             </View>
-            <Text style={styles.title}>Continue Your Learning</Text>
-            <Text style={styles.subtitle}>Pick up where you left off with courses & tutors.</Text>
+            <Text style={[styles.title, { color: colors.text }]}>Continue Your Learning</Text>
+            <Text style={[styles.subtitle, { color: colors.textMuted }]}>
+              Pick up where you left off with courses & tutors.
+            </Text>
           </View>
 
           <View style={styles.form}>
             {/* Email Field */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Email Address</Text>
-              <View style={[styles.inputWrap, errors.email && styles.inputError]}>
-                <Ionicons name="mail-outline" size={18} color="#8A9B8E" style={styles.leftIcon} />
+              <Text style={[styles.label, { color: colors.text }]}>Email Address</Text>
+              <View
+                style={[
+                  styles.inputWrap,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.border,
+                  },
+                  errors.email && styles.inputError,
+                ]}
+              >
+                <Ionicons
+                  name="mail-outline"
+                  size={18}
+                  color={colors.textMuted}
+                  style={styles.leftIcon}
+                />
                 <TextInput
                   value={email}
                   onChangeText={(v) => {
@@ -107,10 +140,10 @@ export default function Login() {
                     setErrors((prev) => ({ ...prev, email: undefined, form: undefined }))
                   }}
                   placeholder="name@example.com"
-                  placeholderTextColor="#8A9B8E"
+                  placeholderTextColor={colors.textMuted}
                   keyboardType="email-address"
                   autoCapitalize="none"
-                  style={styles.input}
+                  style={[styles.input, { color: colors.text }]}
                 />
               </View>
               {!!errors.email && <Text style={styles.error}>{errors.email}</Text>}
@@ -118,9 +151,23 @@ export default function Login() {
 
             {/* Password Field */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Password</Text>
-              <View style={[styles.inputWrap, errors.password && styles.inputError]}>
-                <Ionicons name="lock-closed-outline" size={18} color="#8A9B8E" style={styles.leftIcon} />
+              <Text style={[styles.label, { color: colors.text }]}>Password</Text>
+              <View
+                style={[
+                  styles.inputWrap,
+                  {
+                    backgroundColor: colors.inputBg,
+                    borderColor: colors.border,
+                  },
+                  errors.password && styles.inputError,
+                ]}
+              >
+                <Ionicons
+                  name="lock-closed-outline"
+                  size={18}
+                  color={colors.textMuted}
+                  style={styles.leftIcon}
+                />
                 <TextInput
                   value={password}
                   onChangeText={(v) => {
@@ -128,47 +175,54 @@ export default function Login() {
                     setErrors((prev) => ({ ...prev, password: undefined, form: undefined }))
                   }}
                   placeholder="Enter your password"
-                  placeholderTextColor="#8A9B8E"
+                  placeholderTextColor={colors.textMuted}
                   secureTextEntry={!showPassword}
-                  style={styles.input}
+                  style={[styles.input, { color: colors.text }]}
                 />
-                <Pressable onPress={() => setShowPassword(!showPassword)} hitSlop={10}>
+                <Pressable
+                  onPress={() => setShowPassword(!showPassword)}
+                  hitSlop={8}
+                >
                   <Ionicons
                     name={showPassword ? 'eye-off-outline' : 'eye-outline'}
-                    size={18}
-                    color="#718178"
+                    size={20}
+                    color={colors.textMuted}
                   />
                 </Pressable>
               </View>
               {!!errors.password && <Text style={styles.error}>{errors.password}</Text>}
             </View>
 
+            {/* Forgot Password */}
             <Pressable
               onPress={() => router.push('/(auth)/forgot-password')}
               style={styles.forgotButton}
             >
-              <Text style={styles.forgotText}>Forgot password?</Text>
+              <Text style={[styles.forgotText, { color: colors.primary }]}>
+                Forgot password?
+              </Text>
             </Pressable>
 
+            {/* General Form Error Banner */}
             {!!errors.form && (
               <View style={styles.bannerError}>
-                <Ionicons name="warning-outline" size={18} color="#DC2626" />
+                <Ionicons name="alert-circle" size={18} color="#DC2626" />
                 <Text style={styles.bannerErrorText}>{errors.form}</Text>
               </View>
             )}
 
-            {/* Login Button */}
+            {/* Sign In Button */}
             <Pressable
-              style={({ pressed }) => [
-                styles.primaryButton,
-                pressed && styles.pressed,
-                loading && styles.buttonDisabled,
-              ]}
               onPress={handleSubmit}
               disabled={loading}
+              style={[
+                styles.primaryButton,
+                { backgroundColor: colors.primary },
+                loading && styles.buttonDisabled,
+              ]}
             >
               {loading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
+                <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <>
                   <Text style={styles.primaryButtonText}>Log In</Text>
@@ -179,30 +233,44 @@ export default function Login() {
 
             {/* Divider */}
             <View style={styles.dividerRow}>
-              <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or continue with</Text>
-              <View style={styles.dividerLine} />
+              <View
+                style={[styles.dividerLine, { backgroundColor: colors.border }]}
+              />
+              <Text style={[styles.dividerText, { color: colors.textMuted }]}>
+                OR CONTINUE WITH
+              </Text>
+              <View
+                style={[styles.dividerLine, { backgroundColor: colors.border }]}
+              />
             </View>
 
-            {/* Social Buttons */}
+            {/* Social OAuth Buttons */}
             <View style={styles.socialButtons}>
-              <Pressable style={styles.socialButton} onPress={() => handleSocialLogin('Google')}>
+              <Pressable
+                style={[
+                  styles.socialButton,
+                  {
+                    backgroundColor: colors.card,
+                    borderColor: colors.border,
+                  },
+                ]}
+                onPress={() => handleSocialLogin('Google')}
+              >
                 <Ionicons name="logo-google" size={18} color="#EA4335" />
-                <Text style={styles.socialButtonText}>Continue with Google</Text>
-              </Pressable>
-
-              <Pressable style={styles.socialButton} onPress={() => handleSocialLogin('Apple')}>
-                <Ionicons name="logo-apple" size={18} color="#14351D" />
-                <Text style={styles.socialButtonText}>Continue with Apple</Text>
+                <Text style={[styles.socialButtonText, { color: colors.text }]}>
+                  Continue with Google
+                </Text>
               </Pressable>
             </View>
           </View>
 
           {/* Bottom Switch */}
           <View style={styles.bottomPrompt}>
-            <Text style={styles.promptText}>Don&apos;t have an account yet?</Text>
+            <Text style={[styles.promptText, { color: colors.textMuted }]}>
+              Don&apos;t have an account yet?
+            </Text>
             <Pressable onPress={() => router.push('/(auth)/SignUp')}>
-              <Text style={styles.linkText}> Sign Up</Text>
+              <Text style={[styles.linkText, { color: colors.primary }]}> Sign Up</Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -212,16 +280,13 @@ export default function Login() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  headerContainer: { backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1 },
   flex: { flex: 1 },
   container: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 36 },
 
   heading: { marginTop: 12, marginBottom: 24 },
   badge: {
     alignItems: 'center',
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
     borderRadius: 20,
     borderWidth: 1,
     flexDirection: 'row',
@@ -231,31 +296,29 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     width: 140,
   },
-  badgeText: { color: '#15803D', fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
-  title: { color: '#14351D', fontSize: 26, fontWeight: '900', letterSpacing: -0.4 },
-  subtitle: { color: '#718178', fontSize: 14, marginTop: 6, lineHeight: 20 },
+  badgeText: { fontSize: 11, fontWeight: '800', letterSpacing: 0.5 },
+  title: { fontSize: 26, fontWeight: '900', letterSpacing: -0.4 },
+  subtitle: { fontSize: 14, marginTop: 6, lineHeight: 20 },
 
   form: { gap: 16 },
   fieldGroup: { gap: 6 },
-  label: { color: '#14351D', fontSize: 13, fontWeight: '700' },
+  label: { fontSize: 13, fontWeight: '700' },
 
   inputWrap: {
     alignItems: 'center',
-    backgroundColor: '#F7FAF7',
-    borderColor: '#DFE7E1',
     borderRadius: 14,
     borderWidth: 1.5,
     flexDirection: 'row',
     minHeight: 52,
     paddingHorizontal: 14,
   },
-  input: { color: '#14351D', flex: 1, fontSize: 14, paddingVertical: 12 },
+  input: { flex: 1, fontSize: 14, paddingVertical: 12 },
   leftIcon: { marginRight: 10 },
   inputError: { borderColor: '#EF4444', backgroundColor: '#FEF2F2' },
   error: { color: '#EF4444', fontSize: 12, fontWeight: '600' },
 
   forgotButton: { alignSelf: 'flex-end', marginTop: -4 },
-  forgotText: { color: '#15803D', fontSize: 13, fontWeight: '700' },
+  forgotText: { fontSize: 13, fontWeight: '700' },
 
   bannerError: {
     alignItems: 'center',
@@ -269,14 +332,12 @@ const styles = StyleSheet.create({
 
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#15803D',
     borderRadius: 14,
     flexDirection: 'row',
     gap: 8,
     height: 52,
     justifyContent: 'center',
     marginTop: 6,
-    shadowColor: '#15803D',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.18,
     shadowRadius: 8,
@@ -285,14 +346,12 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
 
   dividerRow: { alignItems: 'center', flexDirection: 'row', gap: 12, marginVertical: 6 },
-  dividerLine: { backgroundColor: '#E8EFEA', flex: 1, height: 1 },
-  dividerText: { color: '#8A9B8E', fontSize: 12, fontWeight: '600' },
+  dividerLine: { flex: 1, height: 1 },
+  dividerText: { fontSize: 11, fontWeight: '600' },
 
   socialButtons: { gap: 10 },
   socialButton: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#DFE7E1',
     borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
@@ -300,10 +359,14 @@ const styles = StyleSheet.create({
     height: 48,
     justifyContent: 'center',
   },
-  socialButtonText: { color: '#14351D', fontSize: 14, fontWeight: '700' },
+  socialButtonText: { fontSize: 14, fontWeight: '700' },
 
-  bottomPrompt: { alignItems: 'center', flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
-  promptText: { color: '#718178', fontSize: 14 },
-  linkText: { color: '#15803D', fontSize: 14, fontWeight: '800' },
-  pressed: { opacity: 0.85 },
+  bottomPrompt: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    marginTop: 24,
+  },
+  promptText: { fontSize: 14 },
+  linkText: { fontSize: 14, fontWeight: '800' },
 })

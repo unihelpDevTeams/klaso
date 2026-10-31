@@ -1,12 +1,15 @@
 import { Stack, useRouter, useSegments } from 'expo-router'
+import { StatusBar } from 'expo-status-bar'
 import { onAuthStateChanged } from 'firebase/auth'
-import { useEffect, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { auth } from '../firebase/config'
+import { ThemeProvider, useTheme } from '../context/ThemeContext'
 
-export default function RootLayout() {
+function RootNavigator() {
   const segments = useSegments()
   const router = useRouter()
   const [ready, setReady] = useState(false)
+  const { isDark } = useTheme()
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
@@ -27,9 +30,23 @@ export default function RootLayout() {
   if (!ready) return null
 
   return (
-    <Stack screenOptions={{ headerShown: false }}>
-      <Stack.Screen name="(auth)/onboarding" />
-      <Stack.Screen name="(tabs)" />
-    </Stack>
+    <>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <Stack screenOptions={{ headerShown: false }}>
+        <Stack.Screen name="(auth)/onboarding" />
+        <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="course-details" options={{ presentation: 'card' }} />
+        <Stack.Screen name="checkout" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="screens/lesson" options={{ presentation: 'card' }} />
+      </Stack>
+    </>
+  )
+}
+
+export default function RootLayout() {
+  return (
+    <ThemeProvider>
+      <RootNavigator />
+    </ThemeProvider>
   )
 }

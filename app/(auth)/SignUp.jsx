@@ -17,6 +17,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../../firebase/config'
+import { useTheme } from '../../context/ThemeContext'
 import Header from '../components/header'
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -31,6 +32,7 @@ const SUBJECTS = [
 ]
 
 export default function SignUp() {
+  const { colors, isDark } = useTheme()
   const [selectedRole, setSelectedRole] = useState('student') // 'student' | 'tutor'
 
   const [form, setForm] = useState({
@@ -163,9 +165,9 @@ export default function SignUp() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-      <Header showBack title="Create Account" subtitle="Join the Klaso Academy" containerStyle={styles.headerContainer} />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+      <Header showBack title="Create Account" subtitle="Join the Klaso Academy" containerStyle={{ backgroundColor: colors.surface }} />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -178,29 +180,33 @@ export default function SignUp() {
         >
           {/* Header Title */}
           <View style={styles.headingWrap}>
-            <Text style={styles.title}>Start Your Learning Journey</Text>
-            <Text style={styles.subtitle}>Choose your account type to personalize your experience.</Text>
+            <Text style={[styles.title, { color: colors.text }]}>Start Your Learning Journey</Text>
+            <Text style={[styles.subtitle, { color: colors.textMuted }]}>Choose your account type to personalize your experience.</Text>
           </View>
 
           {/* Account Role Selector */}
-          <Text style={styles.roleSectionLabel}>Select Account Type</Text>
+          <Text style={[styles.roleSectionLabel, { color: colors.text }]}>Select Account Type</Text>
           <View style={styles.roleSelectorRow}>
             {/* Student Role Card */}
             <Pressable
-              style={[styles.roleCard, selectedRole === 'student' && styles.roleCardActive]}
+              style={[
+                styles.roleCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+                selectedRole === 'student' && styles.roleCardActive,
+              ]}
               onPress={() => setSelectedRole('student')}
             >
               <View style={[styles.roleIconBox, selectedRole === 'student' && styles.roleIconBoxActive]}>
                 <Ionicons
                   name="school"
                   size={24}
-                  color={selectedRole === 'student' ? '#15803D' : '#718178'}
+                  color={selectedRole === 'student' ? '#15803D' : colors.textMuted}
                 />
               </View>
-              <Text style={[styles.roleTitle, selectedRole === 'student' && styles.roleTitleActive]}>
+              <Text style={[styles.roleTitle, { color: colors.text }, selectedRole === 'student' && styles.roleTitleActive]}>
                 Student
               </Text>
-              <Text style={styles.roleSub}>Learn, practice & book tutors</Text>
+              <Text style={[styles.roleSub, { color: colors.textMuted }]}>Learn, practice & book tutors</Text>
               <View style={[styles.radioDot, selectedRole === 'student' && styles.radioDotActive]}>
                 {selectedRole === 'student' && <View style={styles.radioInner} />}
               </View>
@@ -208,20 +214,24 @@ export default function SignUp() {
 
             {/* Tutor Role Card */}
             <Pressable
-              style={[styles.roleCard, selectedRole === 'tutor' && styles.roleCardActive]}
+              style={[
+                styles.roleCard,
+                { backgroundColor: colors.card, borderColor: colors.border },
+                selectedRole === 'tutor' && styles.roleCardActive,
+              ]}
               onPress={() => setSelectedRole('tutor')}
             >
               <View style={[styles.roleIconBox, selectedRole === 'tutor' && styles.roleIconBoxActive]}>
                 <Ionicons
                   name="easel"
                   size={24}
-                  color={selectedRole === 'tutor' ? '#15803D' : '#718178'}
+                  color={selectedRole === 'tutor' ? '#15803D' : colors.textMuted}
                 />
               </View>
-              <Text style={[styles.roleTitle, selectedRole === 'tutor' && styles.roleTitleActive]}>
+              <Text style={[styles.roleTitle, { color: colors.text }, selectedRole === 'tutor' && styles.roleTitleActive]}>
                 Tutor
               </Text>
-              <Text style={styles.roleSub}>Teach, mentor & earn income</Text>
+              <Text style={[styles.roleSub, { color: colors.textMuted }]}>Teach, mentor & earn income</Text>
               <View style={[styles.radioDot, selectedRole === 'tutor' && styles.radioDotActive]}>
                 {selectedRole === 'tutor' && <View style={styles.radioInner} />}
               </View>
@@ -484,14 +494,19 @@ function Field({
   inputStyle,
   ...inputProps
 }) {
+  const { colors, isDark } = useTheme()
   const [isFocused, setIsFocused] = useState(false)
 
   return (
     <View style={styles.fieldGroup}>
-      <Text style={styles.label}>{label}</Text>
+      <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
       <View
         style={[
           styles.inputWrap,
+          {
+            backgroundColor: colors.inputBg,
+            borderColor: colors.border,
+          },
           isFocused && styles.inputFocused,
           isTouched && error && styles.inputError,
           isTouched && isValid && styles.inputSuccess,
@@ -501,15 +516,15 @@ function Field({
           <Ionicons
             name={leftIcon}
             size={18}
-            color={isTouched && error ? '#EF4444' : isFocused ? '#15803D' : '#8A9B8E'}
+            color={isTouched && error ? '#EF4444' : isFocused ? colors.primary : colors.textMuted}
             style={styles.leftIcon}
           />
         )}
 
         <TextInput
           {...inputProps}
-          style={[styles.input, inputStyle]}
-          placeholderTextColor="#8A9B8E"
+          style={[styles.input, { color: colors.text }, inputStyle]}
+          placeholderTextColor={colors.textMuted}
           onFocus={() => setIsFocused(true)}
           onBlur={(e) => {
             setIsFocused(false)

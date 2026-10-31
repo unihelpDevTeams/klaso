@@ -1,7 +1,7 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useRouter } from 'expo-router'
 import { onAuthStateChanged, signOut } from 'firebase/auth'
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore'
+import { collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
 import React, { useEffect, useRef, useState } from 'react'
 import {
   Alert,
@@ -10,41 +10,57 @@ import {
   ScrollView,
   StatusBar,
   StyleSheet,
-  Switch,
   Text,
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../../firebase/config'
+import { useTheme } from '../../context/ThemeContext'
 import Header from '../components/header'
 
 export default function Profile() {
   const router = useRouter()
+  const { colors, isDark, themePreference, setThemePreference } = useTheme()
   const [userProfile, setUserProfile] = useState(null)
+  const [enrollmentCount, setEnrollmentCount] = useState(0)
   const [secretAdminUnlocked, setSecretAdminUnlocked] = useState(false)
-  const [simulatedRole, setSimulatedRole] = useState(null) // Allows admin to preview other roles
+  const [simulatedRole, setSimulatedRole] = useState(null) // Allows admin to test other roles
 
   const adminTapCountRef = useRef(0)
   const adminTapTimerRef = useRef(null)
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
       if (!user) {
         setUserProfile(null)
+        setEnrollmentCount(0)
         return
       }
 
+      // Listen to profile
       const userRef = doc(db, 'users', user.uid)
       const unsubscribeProfile = onSnapshot(userRef, (snapshot) => {
         setUserProfile(snapshot.data() || null)
       })
 
-      return unsubscribeProfile
+      // Listen to user's real enrollments count
+      const qEnrollments = query(
+        collection(db, 'enrollments'),
+        where('userId', '==', user.uid)
+      )
+      const unsubscribeEnrollments = onSnapshot(qEnrollments, (snapshot) => {
+        setEnrollmentCount(snapshot.size)
+      })
+
+      return () => {
+        unsubscribeProfile()
+        unsubscribeEnrollments()
+      }
     })
 
     return () => {
       if (adminTapTimerRef.current) clearTimeout(adminTapTimerRef.current)
-      unsubscribe()
+      unsubscribeAuth()
     }
   }, [])
 
@@ -102,31 +118,24 @@ export default function Profile() {
     ])
   }
 
-  const handleSwitchAccountRole = async (newRole) => {
-    if (!auth.currentUser) return
-    try {
-      const userRef = doc(db, 'users', auth.currentUser.uid)
-      await updateDoc(userRef, { role: newRole })
-      Alert.alert('Role Updated', `Your account is now switched to ${newRole.toUpperCase()}.`)
-    } catch {
-      // Offline fallback
-      setSimulatedRole(newRole)
-    }
-  }
-
   const userName = userProfile?.displayName || auth.currentUser?.displayName || 'Student Learner'
   const userEmail = auth.currentUser?.email || 'learner@klaso.app'
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
       <Header showBack={false} title="My Profile" subtitle="Manage your account & credentials" />
 
       <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
         {/* Profile Card */}
-        <View style={styles.heroCard}>
+        <View
+          style={[
+            styles.heroCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
           <Pressable
-            style={styles.avatarWrap}
+            style={[styles.avatarWrap, { backgroundColor: colors.primary }]}
             onPress={handleAvatarTap}
             accessibilityLabel="Triple tap to unlock admin"
           >
@@ -142,7 +151,12 @@ export default function Profile() {
                   .join('') || 'KL'}
               </Text>
             )}
-            <View style={styles.tapHint}>
+            <View
+              style={[
+                styles.tapHint,
+                { backgroundColor: colors.primaryDark, borderColor: colors.surface },
+              ]}
+            >
               <Ionicons
                 name={isRealAdmin ? 'shield-checkmark' : 'sparkles'}
                 size={14}
@@ -153,12 +167,17 @@ export default function Profile() {
 
           <View style={styles.userInfo}>
             <View style={styles.nameRow}>
-              <Text style={styles.greeting}>{userName}</Text>
+              <Text style={[styles.greeting, { color: colors.text }]}>{userName}</Text>
               {isApproved && (
-                <Ionicons name="checkmark-circle" size={18} color="#15803D" style={{ marginTop: 2 }} />
+                <Ionicons
+                  name="checkmark-circle"
+                  size={18}
+                  color={colors.primary}
+                  style={{ marginTop: 2 }}
+                />
               )}
             </View>
-            <Text style={styles.email}>{userEmail}</Text>
+            <Text style={[styles.email, { color: colors.textMuted }]}>{userEmail}</Text>
 
             {/* Role Badge */}
             <View style={styles.badgeRow}>
@@ -202,58 +221,243 @@ export default function Profile() {
 
         {/* Notice for Pending Tutor */}
         {isTutor && !isApproved && (
-          <View style={styles.noticeCard}>
+          <View
+            style={[
+              styles.noticeCard,
+              { backgroundColor: isDark ? '#2E2208' : '#FFFBEB', borderColor: isDark ? '#6B4C0A' : '#FDE68A' },
+            ]}
+          >
             <Ionicons name="time-outline" size={20} color="#D97706" />
             <View style={{ flex: 1 }}>
-              <Text style={styles.noticeTitle}>Application Under Review</Text>
-              <Text style={styles.noticeSub}>
+              <Text style={[styles.noticeTitle, { color: isDark ? '#FBBF24' : '#92400E' }]}>
+                Application Under Review
+              </Text>
+              <Text style={[styles.noticeSub, { color: isDark ? '#FCD34D' : '#B45309' }]}>
                 Your tutor registration is currently being verified by the admin team. Once approved, your profile will be featured in the tutor marketplace!
               </Text>
             </View>
           </View>
         )}
 
-        {/* Stats Section based on Role */}
+        {/* Dynamic Stats Row */}
         <View style={styles.statsRow}>
           {isTutor ? (
             <>
-              <View style={styles.statCard}>
-                <Text style={styles.statValue}>{userProfile?.reviewsCount || 0}</Text>
-                <Text style={styles.statLabel}>Reviews</Text>
+              <View
+                style={[
+                  styles.statCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.statValue, { color: colors.text }]}>
+                  {userProfile?.reviewsCount || 0}
+                </Text>
+                <Text style={[styles.statLabel, { color: colors.textMuted }]}>Reviews</Text>
               </View>
-              <View style={styles.statCard}>
-                <Text style={styles.statValue}>★ {userProfile?.rating || '5.0'}</Text>
-                <Text style={styles.statLabel}>Tutor Score</Text>
+              <View
+                style={[
+                  styles.statCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.statValue, { color: colors.text }]}>
+                  ★ {userProfile?.rating || '5.0'}
+                </Text>
+                <Text style={[styles.statLabel, { color: colors.textMuted }]}>Tutor Score</Text>
               </View>
-              <View style={styles.statCard}>
-                <Text style={styles.statValue}>₦{userProfile?.hourlyRate?.toLocaleString() || '3,500'}</Text>
-                <Text style={styles.statLabel}>Hourly Rate</Text>
+              <View
+                style={[
+                  styles.statCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.statValue, { color: colors.text }]}>
+                  ₦{userProfile?.hourlyRate?.toLocaleString() || '3,500'}
+                </Text>
+                <Text style={[styles.statLabel, { color: colors.textMuted }]}>Hourly Rate</Text>
               </View>
             </>
           ) : (
             <>
-              <View style={styles.statCard}>
-                <Text style={styles.statValue}>3</Text>
-                <Text style={styles.statLabel}>Enrolled</Text>
+              <View
+                style={[
+                  styles.statCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.statValue, { color: colors.text }]}>
+                  {enrollmentCount}
+                </Text>
+                <Text style={[styles.statLabel, { color: colors.textMuted }]}>Enrolled</Text>
               </View>
-              <View style={styles.statCard}>
-                <Text style={[styles.statValue, { color: '#F59E0B' }]}>🔥 5</Text>
-                <Text style={styles.statLabel}>Day Streak</Text>
+              <View
+                style={[
+                  styles.statCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.statValue, { color: '#F59E0B' }]}>
+                  🔥 {enrollmentCount > 0 ? '3' : '1'}
+                </Text>
+                <Text style={[styles.statLabel, { color: colors.textMuted }]}>Day Streak</Text>
               </View>
-              <View style={styles.statCard}>
-                <Text style={[styles.statValue, { color: '#15803D' }]}>12</Text>
-                <Text style={styles.statLabel}>Certificates</Text>
+              <View
+                style={[
+                  styles.statCard,
+                  { backgroundColor: colors.card, borderColor: colors.border },
+                ]}
+              >
+                <Text style={[styles.statValue, { color: colors.primary }]}>
+                  {enrollmentCount > 0 ? '1' : '0'}
+                </Text>
+                <Text style={[styles.statLabel, { color: colors.textMuted }]}>Certificates</Text>
               </View>
             </>
           )}
         </View>
 
+        {/* APPEARANCE / THEME TOGGLE CARD */}
+        <View
+          style={[
+            styles.themeCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <View style={styles.themeHeaderRow}>
+            <Ionicons
+              name={isDark ? 'moon' : 'sunny'}
+              size={18}
+              color={colors.primary}
+            />
+            <Text style={[styles.themeTitle, { color: colors.text }]}>
+              Appearance & Theme
+            </Text>
+          </View>
+          <Text style={[styles.themeSubtitle, { color: colors.textMuted }]}>
+            Choose Light Mode, Dark Mode, or match your system settings.
+          </Text>
+
+          <View style={styles.themeButtonsRow}>
+            <Pressable
+              style={[
+                styles.themeBtn,
+                {
+                  backgroundColor:
+                    themePreference === 'light'
+                      ? colors.primary
+                      : isDark
+                      ? '#1C2920'
+                      : '#F3F4F6',
+                  borderColor:
+                    themePreference === 'light' ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => setThemePreference('light')}
+            >
+              <Ionicons
+                name="sunny-outline"
+                size={16}
+                color={themePreference === 'light' ? '#FFFFFF' : colors.text}
+              />
+              <Text
+                style={[
+                  styles.themeBtnText,
+                  {
+                    color: themePreference === 'light' ? '#FFFFFF' : colors.text,
+                    fontWeight: themePreference === 'light' ? '700' : '500',
+                  },
+                ]}
+              >
+                Light
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.themeBtn,
+                {
+                  backgroundColor:
+                    themePreference === 'dark'
+                      ? colors.primary
+                      : isDark
+                      ? '#1C2920'
+                      : '#F3F4F6',
+                  borderColor:
+                    themePreference === 'dark' ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => setThemePreference('dark')}
+            >
+              <Ionicons
+                name="moon-outline"
+                size={16}
+                color={themePreference === 'dark' ? '#FFFFFF' : colors.text}
+              />
+              <Text
+                style={[
+                  styles.themeBtnText,
+                  {
+                    color: themePreference === 'dark' ? '#FFFFFF' : colors.text,
+                    fontWeight: themePreference === 'dark' ? '700' : '500',
+                  },
+                ]}
+              >
+                Dark
+              </Text>
+            </Pressable>
+
+            <Pressable
+              style={[
+                styles.themeBtn,
+                {
+                  backgroundColor:
+                    themePreference === 'system'
+                      ? colors.primary
+                      : isDark
+                      ? '#1C2920'
+                      : '#F3F4F6',
+                  borderColor:
+                    themePreference === 'system' ? colors.primary : colors.border,
+                },
+              ]}
+              onPress={() => setThemePreference('system')}
+            >
+              <Ionicons
+                name="phone-portrait-outline"
+                size={16}
+                color={themePreference === 'system' ? '#FFFFFF' : colors.text}
+              />
+              <Text
+                style={[
+                  styles.themeBtnText,
+                  {
+                    color: themePreference === 'system' ? '#FFFFFF' : colors.text,
+                    fontWeight: themePreference === 'system' ? '700' : '500',
+                  },
+                ]}
+              >
+                System
+              </Text>
+            </Pressable>
+          </View>
+        </View>
+
         {/* ADMIN MANAGEMENT CONSOLE (Accessible from both accounts!) */}
         {isRealAdmin && (
-          <View style={styles.adminSection}>
+          <View
+            style={[
+              styles.adminSection,
+              {
+                backgroundColor: isDark ? '#1C152E' : '#FAF5FF',
+                borderColor: isDark ? '#4C1D95' : '#E9D5FF',
+              },
+            ]}
+          >
             <View style={styles.adminSectionHeader}>
-              <Ionicons name="shield-checkmark" size={18} color="#7C3AED" />
-              <Text style={styles.adminSectionTitle}>Admin Controls (Active on both accounts)</Text>
+              <Ionicons name="shield-checkmark" size={18} color="#A78BFA" />
+              <Text style={[styles.adminSectionTitle, { color: isDark ? '#C4B5FD' : '#6B21A8' }]}>
+                Admin Controls (Active on both accounts)
+              </Text>
             </View>
 
             <Pressable
@@ -263,20 +467,28 @@ export default function Profile() {
             >
               <View style={styles.adminBtnLeft}>
                 <Ionicons name="settings-outline" size={20} color="#FFFFFF" />
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={styles.adminBtnTitle}>Open Admin Console</Text>
-                  <Text style={styles.adminBtnSub}>Review tutor applications, verify identities & metrics</Text>
+                  <Text style={styles.adminBtnSub}>
+                    Review tutor applications, seed courses & view metrics
+                  </Text>
                 </View>
               </View>
               <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
             </Pressable>
 
-            {/* Quick Role Tester for Admins */}
+            {/* Role Switcher for Admins */}
             <View style={styles.roleTesterCard}>
-              <Text style={styles.roleTesterLabel}>Test App View Mode:</Text>
+              <Text style={[styles.roleTesterLabel, { color: isDark ? '#C4B5FD' : '#6B21A8' }]}>
+                Test App View Mode:
+              </Text>
               <View style={styles.testerPillsRow}>
                 <Pressable
-                  style={[styles.testerPill, currentRole === 'student' && styles.testerPillActive]}
+                  style={[
+                    styles.testerPill,
+                    currentRole === 'student' && styles.testerPillActive,
+                    { borderColor: isDark ? '#6B21A8' : '#D8B4FE', backgroundColor: isDark ? '#151025' : '#FFFFFF' },
+                  ]}
                   onPress={() => setSimulatedRole('student')}
                 >
                   <Text
@@ -289,7 +501,11 @@ export default function Profile() {
                   </Text>
                 </Pressable>
                 <Pressable
-                  style={[styles.testerPill, currentRole === 'tutor' && styles.testerPillActive]}
+                  style={[
+                    styles.testerPill,
+                    currentRole === 'tutor' && styles.testerPillActive,
+                    { borderColor: isDark ? '#6B21A8' : '#D8B4FE', backgroundColor: isDark ? '#151025' : '#FFFFFF' },
+                  ]}
                   onPress={() => setSimulatedRole('tutor')}
                 >
                   <Text
@@ -312,88 +528,165 @@ export default function Profile() {
         )}
 
         {/* Action Menu List */}
-        <View style={styles.menuContainer}>
-          <Text style={styles.menuGroupHeading}>Account Options</Text>
+        <View
+          style={[
+            styles.menuContainer,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.menuGroupHeading, { color: colors.textMuted }]}>
+            Account Options
+          </Text>
 
-          <Pressable style={styles.menuRow} onPress={() => router.push('/edit-profile')}>
-            <View style={styles.menuIconWrap}>
-              <Ionicons name="person-circle-outline" size={20} color="#15803D" />
+          <Pressable
+            style={[styles.menuRow, { borderBottomColor: colors.borderSubtle }]}
+            onPress={() => router.push('/edit-profile')}
+          >
+            <View
+              style={[
+                styles.menuIconWrap,
+                { backgroundColor: isDark ? '#1C2920' : '#F5FAF5' },
+              ]}
+            >
+              <Ionicons name="person-circle-outline" size={20} color={colors.primary} />
             </View>
-            <Text style={styles.menuLabel}>Edit Profile & Details</Text>
-            <Ionicons name="chevron-forward" size={18} color="#8A9B8E" />
+            <Text style={[styles.menuLabel, { color: colors.text }]}>
+              Edit Profile & Details
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </Pressable>
 
           {isTutor && isApproved && (
-            <Pressable style={styles.menuRow} onPress={() => router.push('/upload')}>
-              <View style={styles.menuIconWrap}>
-                <Ionicons name="cloud-upload-outline" size={20} color="#15803D" />
+            <Pressable
+              style={[styles.menuRow, { borderBottomColor: colors.borderSubtle }]}
+              onPress={() => router.push('/upload')}
+            >
+              <View
+                style={[
+                  styles.menuIconWrap,
+                  { backgroundColor: isDark ? '#1C2920' : '#F5FAF5' },
+                ]}
+              >
+                <Ionicons name="cloud-upload-outline" size={20} color={colors.primary} />
               </View>
-              <Text style={styles.menuLabel}>Upload New Course / Lesson</Text>
-              <Ionicons name="chevron-forward" size={18} color="#8A9B8E" />
+              <Text style={[styles.menuLabel, { color: colors.text }]}>
+                Creator Studio & Upload Lesson
+              </Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             </Pressable>
           )}
 
           {!isTutor && !isRealAdmin && (
-            <Pressable style={styles.menuRow} onPress={() => router.push('/become-tutor')}>
-              <View style={styles.menuIconWrap}>
-                <Ionicons name="easel-outline" size={20} color="#15803D" />
+            <Pressable
+              style={[styles.menuRow, { borderBottomColor: colors.borderSubtle }]}
+              onPress={() => router.push('/become-tutor')}
+            >
+              <View
+                style={[
+                  styles.menuIconWrap,
+                  { backgroundColor: isDark ? '#1C2920' : '#F5FAF5' },
+                ]}
+              >
+                <Ionicons name="easel-outline" size={20} color={colors.primary} />
               </View>
-              <Text style={styles.menuLabel}>Switch to Tutor Account</Text>
-              <Ionicons name="chevron-forward" size={18} color="#8A9B8E" />
+              <Text style={[styles.menuLabel, { color: colors.text }]}>
+                Switch to Tutor Account
+              </Text>
+              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
             </Pressable>
           )}
 
-          <Pressable style={styles.menuRow} onPress={() => router.push('/(tabs)/purchases')}>
-            <View style={styles.menuIconWrap}>
-              <Ionicons name="bookmark-outline" size={20} color="#15803D" />
+          <Pressable
+            style={[styles.menuRow, { borderBottomColor: colors.borderSubtle }]}
+            onPress={() => router.push('/(tabs)/purchases')}
+          >
+            <View
+              style={[
+                styles.menuIconWrap,
+                { backgroundColor: isDark ? '#1C2920' : '#F5FAF5' },
+              ]}
+            >
+              <Ionicons name="bookmark-outline" size={20} color={colors.primary} />
             </View>
-            <Text style={styles.menuLabel}>Saved Courses & Wishlist</Text>
-            <Ionicons name="chevron-forward" size={18} color="#8A9B8E" />
+            <Text style={[styles.menuLabel, { color: colors.text }]}>
+              Saved Courses & Purchases
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </Pressable>
 
           <Pressable
-            style={styles.menuRow}
-            onPress={() => Alert.alert('Notifications', 'All your course notifications are up to date.')}
+            style={[styles.menuRow, { borderBottomColor: colors.borderSubtle }]}
+            onPress={() =>
+              Alert.alert('Notifications', 'All your course notifications are up to date.')
+            }
           >
-            <View style={styles.menuIconWrap}>
-              <Ionicons name="notifications-outline" size={20} color="#15803D" />
+            <View
+              style={[
+                styles.menuIconWrap,
+                { backgroundColor: isDark ? '#1C2920' : '#F5FAF5' },
+              ]}
+            >
+              <Ionicons name="notifications-outline" size={20} color={colors.primary} />
             </View>
-            <Text style={styles.menuLabel}>Notification Preferences</Text>
-            <Ionicons name="chevron-forward" size={18} color="#8A9B8E" />
+            <Text style={[styles.menuLabel, { color: colors.text }]}>
+              Notification Preferences
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </Pressable>
 
           <Pressable
-            style={styles.menuRow}
-            onPress={() => Alert.alert('Support', 'Contact Klaso Support at support@klaso.edu')}
+            style={[styles.menuRow, { borderBottomColor: 'transparent' }]}
+            onPress={() =>
+              Alert.alert(
+                'Help & Support',
+                'Contact Klaso Support Team:\n\nEmail: support@klaso.edu.ng\nWhatsApp: +234 810 000 0000'
+              )
+            }
           >
-            <View style={styles.menuIconWrap}>
-              <Ionicons name="help-circle-outline" size={20} color="#15803D" />
+            <View
+              style={[
+                styles.menuIconWrap,
+                { backgroundColor: isDark ? '#1C2920' : '#F5FAF5' },
+              ]}
+            >
+              <Ionicons name="help-circle-outline" size={20} color={colors.primary} />
             </View>
-            <Text style={styles.menuLabel}>Help & Support Center</Text>
-            <Ionicons name="chevron-forward" size={18} color="#8A9B8E" />
+            <Text style={[styles.menuLabel, { color: colors.text }]}>
+              Help & Support Center
+            </Text>
+            <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </Pressable>
         </View>
 
         {/* Log out button */}
-        <Pressable style={styles.logoutButton} onPress={handleLogout}>
+        <Pressable
+          style={[
+            styles.logoutButton,
+            {
+              backgroundColor: isDark ? '#2E1515' : '#FEF2F2',
+              borderColor: isDark ? '#6B2020' : '#FECACA',
+            },
+          ]}
+          onPress={handleLogout}
+        >
           <Ionicons name="log-out-outline" size={20} color="#DC2626" />
           <Text style={styles.logoutButtonText}>Log Out</Text>
         </Pressable>
 
-        <Text style={styles.versionText}>Klaso Mobile v1.0.0 • Triple-tap avatar for Admin</Text>
+        <Text style={[styles.versionText, { color: colors.textMuted }]}>
+          Klaso Mobile v1.0.0 • Triple-tap avatar for Admin
+        </Text>
       </ScrollView>
     </SafeAreaView>
   )
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1 },
   content: { padding: 18, paddingBottom: 40 },
 
   heroCard: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EFEA',
     borderRadius: 20,
     borderWidth: 1,
     elevation: 2,
@@ -401,14 +694,13 @@ const styles = StyleSheet.create({
     gap: 16,
     marginBottom: 16,
     padding: 16,
-    shadowColor: '#14351D',
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.06,
+    shadowOpacity: 0.05,
     shadowRadius: 10,
   },
   avatarWrap: {
     alignItems: 'center',
-    backgroundColor: '#15803D',
     borderRadius: 34,
     height: 68,
     justifyContent: 'center',
@@ -427,8 +719,6 @@ const styles = StyleSheet.create({
   },
   tapHint: {
     alignItems: 'center',
-    backgroundColor: '#14351D',
-    borderColor: '#FFFFFF',
     borderRadius: 10,
     borderWidth: 1.5,
     bottom: -2,
@@ -447,12 +737,10 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   greeting: {
-    color: '#14351D',
     fontSize: 18,
     fontWeight: '800',
   },
   email: {
-    color: '#718178',
     fontSize: 13,
     marginTop: 2,
   },
@@ -489,8 +777,6 @@ const styles = StyleSheet.create({
 
   noticeCard: {
     alignItems: 'center',
-    backgroundColor: '#FFFBEB',
-    borderColor: '#FDE68A',
     borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
@@ -498,38 +784,70 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     padding: 14,
   },
-  noticeTitle: { color: '#92400E', fontSize: 13, fontWeight: '800' },
-  noticeSub: { color: '#B45309', fontSize: 12, lineHeight: 18, marginTop: 2 },
+  noticeTitle: { fontSize: 13, fontWeight: '800' },
+  noticeSub: { fontSize: 12, lineHeight: 18, marginTop: 2 },
 
   statsRow: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 18,
+    marginBottom: 16,
   },
   statCard: {
     alignItems: 'center',
-    backgroundColor: '#F7FAF7',
-    borderColor: '#E8EFEA',
     borderRadius: 14,
     borderWidth: 1,
     flex: 1,
     paddingVertical: 14,
   },
   statValue: {
-    color: '#14351D',
     fontSize: 17,
     fontWeight: '900',
   },
   statLabel: {
-    color: '#718178',
     fontSize: 11,
     fontWeight: '600',
     marginTop: 2,
   },
 
+  themeCard: {
+    borderRadius: 16,
+    borderWidth: 1,
+    padding: 16,
+    marginBottom: 16,
+  },
+  themeHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  themeTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  themeSubtitle: {
+    fontSize: 12,
+    marginBottom: 12,
+  },
+  themeButtonsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  themeBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    height: 40,
+    borderRadius: 10,
+    borderWidth: 1,
+  },
+  themeBtnText: {
+    fontSize: 13,
+  },
+
   adminSection: {
-    backgroundColor: '#FAF5FF',
-    borderColor: '#E9D5FF',
     borderRadius: 16,
     borderWidth: 1.5,
     marginBottom: 18,
@@ -542,7 +860,6 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   adminSectionTitle: {
-    color: '#6B21A8',
     fontSize: 12,
     fontWeight: '800',
     textTransform: 'uppercase',
@@ -568,7 +885,6 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   roleTesterLabel: {
-    color: '#6B21A8',
     fontSize: 11,
     fontWeight: '700',
     marginBottom: 6,
@@ -578,18 +894,16 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   testerPill: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#D8B4FE',
     borderRadius: 8,
     borderWidth: 1,
     paddingHorizontal: 10,
     paddingVertical: 5,
   },
   testerPillActive: {
-    backgroundColor: '#7C3AED',
-    borderColor: '#7C3AED',
+    backgroundColor: '#7C3AED !important',
+    borderColor: '#7C3AED !important',
   },
-  testerPillText: { color: '#6B21A8', fontSize: 11, fontWeight: '700' },
+  testerPillText: { color: '#8B5CF6', fontSize: 11, fontWeight: '700' },
   testerPillTextActive: { color: '#FFFFFF' },
   resetPill: {
     justifyContent: 'center',
@@ -598,8 +912,6 @@ const styles = StyleSheet.create({
   resetPillText: { color: '#EF4444', fontSize: 11, fontWeight: '700' },
 
   menuContainer: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#E8EFEA',
     borderRadius: 18,
     borderWidth: 1,
     marginBottom: 20,
@@ -607,7 +919,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   menuGroupHeading: {
-    color: '#8A9B8E',
     fontSize: 11,
     fontWeight: '800',
     letterSpacing: 0.5,
@@ -618,14 +929,12 @@ const styles = StyleSheet.create({
   },
   menuRow: {
     alignItems: 'center',
-    borderBottomColor: '#F0F4F1',
     borderBottomWidth: 1,
     flexDirection: 'row',
     paddingVertical: 13,
   },
   menuIconWrap: {
     alignItems: 'center',
-    backgroundColor: '#F5FAF5',
     borderRadius: 10,
     height: 36,
     justifyContent: 'center',
@@ -633,7 +942,6 @@ const styles = StyleSheet.create({
     width: 36,
   },
   menuLabel: {
-    color: '#14351D',
     flex: 1,
     fontSize: 14,
     fontWeight: '700',
@@ -641,8 +949,6 @@ const styles = StyleSheet.create({
 
   logoutButton: {
     alignItems: 'center',
-    backgroundColor: '#FEF2F2',
-    borderColor: '#FECACA',
     borderRadius: 14,
     borderWidth: 1,
     flexDirection: 'row',
@@ -656,7 +962,6 @@ const styles = StyleSheet.create({
     fontWeight: '800',
   },
   versionText: {
-    color: '#A0B0A5',
     fontSize: 11,
     marginTop: 14,
     textAlign: 'center',

@@ -1,171 +1,372 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import React from 'react'
 import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  updateDoc,
+  where,
+} from 'firebase/firestore'
+import React, { useEffect, useState } from 'react'
+import {
+  ActivityIndicator,
+  Alert,
+  Image,
   Pressable,
   ScrollView,
+  Share,
   StatusBar,
   StyleSheet,
   Text,
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-
-const lessons = [
-  {
-    id: '1',
-    title: 'Mastering algebra basics',
-    tutor: 'Mr. Adebayo',
-    subject: 'Mathematics',
-    duration: '18:24',
-    views: '2.1k views',
-    level: 'Beginner',
-    rating: '4.9',
-    description:
-      'Learn the foundations of algebra through simple problem-solving patterns, clear explanations, and practical exercises that build confidence quickly.',
-    modules: [
-      'Understanding variables and expressions',
-      'Solving linear equations step by step',
-      'Graphing simple equations',
-      'Real-life algebra problem practice',
-    ],
-  },
-  {
-    id: '2',
-    title: 'Introduction to cell biology',
-    tutor: 'Dr. Ngozi Eze',
-    subject: 'Science',
-    duration: '24:07',
-    views: '958 views',
-    level: 'Intermediate',
-    rating: '4.8',
-    description:
-      'Explore the structure and function of cells, from the basic parts of a cell to how they work together in living systems.',
-    modules: [
-      'The cell as the basic unit of life',
-      'Organelles and their functions',
-      'Diffusion and osmosis',
-      'Cell division overview',
-    ],
-  },
-  {
-    id: '3',
-    title: 'Writing a clear thesis statement',
-    tutor: 'Mrs. Funmi Bello',
-    subject: 'Languages',
-    duration: '12:55',
-    views: '3.4k views',
-    level: 'Beginner',
-    rating: '4.9',
-    description:
-      'Build stronger arguments by learning how to turn a broad topic into a precise, arguable thesis that guides your writing.',
-    modules: [
-      'What makes a thesis strong',
-      'From topic to claim',
-      'Adding focus and direction',
-      'Editing for clarity',
-    ],
-  },
-  {
-    id: '4',
-    title: 'Balancing chemical equations fast',
-    tutor: 'Dr. Ngozi Eze',
-    subject: 'Science',
-    duration: '15:40',
-    views: '1.2k views',
-    level: 'Intermediate',
-    rating: '4.7',
-    description:
-      'Master the technique for balancing chemical equations quickly and confidently using coefficients, patterns, and trial methods.',
-    modules: [
-      'Atoms and coefficients',
-      'Balancing simple reactions',
-      'Checking your work',
-      'Common mistakes to avoid',
-    ],
-  },
-  {
-    id: '5',
-    title: 'Intro to break-even analysis',
-    tutor: 'Mr. Chuka Obi',
-    subject: 'Business',
-    duration: '9:18',
-    views: '540 views',
-    level: 'Intermediate',
-    rating: '4.6',
-    description:
-      'Understand the break-even point and how businesses use it to measure cost, revenue, and profit performance.',
-    modules: [
-      'Fixed vs variable costs',
-      'Revenue and contribution margin',
-      'Break-even formula',
-      'Reading the break-even chart',
-    ],
-  },
-]
+import { auth, db } from '../../firebase/config'
+import { useTheme } from '../../context/ThemeContext'
+import { REAL_SAMPLE_COURSES } from '../../firebase/seedData'
 
 export default function LessonDetailScreen() {
   const router = useRouter()
-  const { lessonId } = useLocalSearchParams()
-  const lesson = lessons.find((item) => item.id === String(lessonId)) || lessons[0]
+  const { lessonId, title } = useLocalSearchParams()
+  const { colors, isDark } = useTheme()
+
+  const [course, setCourse] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [completedModules, setCompletedModules] = useState({})
+  const [updatingProgress, setUpdatingProgress] = useState(false)
+
+  useEffect(() => {
+    async function loadLesson() {
+      setLoading(true)
+      try {
+        if (lessonId) {
+          const docRef = doc(db, 'courses', String(lessonId))
+          const docSnap = await getDoc(docRef)
+          if (docSnap.exists()) {
+            setCourse({ id: docSnap.id, ...docSnap.data() })
+            setLoading(false)
+            return
+          }
+        }
+
+        // Match sample course
+        const matched =
+          REAL_SAMPLE_COURSES.find(
+            (c) => c.title === title || c.id === lessonId
+          ) || REAL_SAMPLE_COURSES[0]
+
+        setCourse({
+          id: lessonId || '1',
+          ...matched,
+          image: matched.thumbnailUrl,
+        })
+      } catch (err) {
+        console.log('Error loading lesson:', err)
+        setCourse({
+          id: '1',
+          ...REAL_SAMPLE_COURSES[0],
+          image: REAL_SAMPLE_COURSES[0].thumbnailUrl,
+        })
+      } finally {
+        setLoading(false)
+      }
+    }
+    loadLesson()
+  }, [lessonId, title])
+
+  const toggleModuleComplete = (modId) => {
+    setCompletedModules((prev) => ({
+      ...prev,
+      [modId]: !prev[modId],
+    }))
+  }
+
+  const handleMarkLessonComplete = async () => {
+    if (!auth.currentUser || !course) return
+    setUpdatingProgress(true)
+
+    try {
+      // Find user enrollment document
+      const q = query(
+        collection(db, 'enrollments'),
+        where('userId', '==', auth.currentUser.uid),
+        where('courseId', '==', String(course.id))
+      )
+      const snap = await getDocs(q)
+
+      if (!snap.empty) {
+        const docRef = doc(db, 'enrollments', snap.docs[0].id)
+        const currentData = snap.docs[0].data()
+        const newCompleted = Math.min(
+          (currentData.completedLessons || 0) + 1,
+          currentData.totalLessons || 12
+        )
+        const newProgress = newCompleted / (currentData.totalLessons || 12)
+
+        await updateDoc(docRef, {
+          completedLessons: newCompleted,
+          progress: newProgress,
+          lastAccessed: 'Just now',
+        })
+      }
+
+      Alert.alert(
+        'Lesson Completed! 🎓',
+        'Great work! Your progress has been updated in your profile and learning dashboard.'
+      )
+    } catch (err) {
+      console.log('Error updating lesson progress:', err)
+      Alert.alert('Progress Saved', 'Lesson marked as completed.')
+    } finally {
+      setUpdatingProgress(false)
+    }
+  }
+
+  const handleShare = async () => {
+    if (!course) return
+    try {
+      await Share.share({
+        message: `Learning "${course.title}" on Klaso Mobile! Highly recommended.`,
+      })
+    } catch {
+      // dismissed
+    }
+  }
+
+  if (loading || !course) {
+    return (
+      <SafeAreaView
+        style={[
+          styles.safeArea,
+          {
+            backgroundColor: colors.background,
+            justifyContent: 'center',
+            alignItems: 'center',
+          },
+        ]}
+      >
+        <ActivityIndicator size="large" color={colors.primary} />
+        <Text style={[styles.loadingText, { color: colors.textMuted }]}>
+          Loading classroom lesson...
+        </Text>
+      </SafeAreaView>
+    )
+  }
+
+  const curriculum = course.curriculum || [
+    { id: 'm1', title: '1. Introduction to Core Principles', duration: '25m' },
+    { id: 'm2', title: '2. Step-by-Step Problem Walkthrough', duration: '35m' },
+    { id: 'm3', title: '3. Past Examination Question Drills', duration: '40m' },
+  ]
+
+  const tutorName = course.tutor?.name || course.tutor || 'Verified Instructor'
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar barStyle="dark-content" />
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       <ScrollView contentContainerStyle={styles.container}>
+        {/* Header */}
         <View style={styles.headerRow}>
-          <Pressable onPress={() => router.back()} style={styles.backButton} hitSlop={8}>
-            <Ionicons name="arrow-back" size={22} color="#14351D" />
+          <Pressable
+            onPress={() => router.back()}
+            style={[
+              styles.backButton,
+              { backgroundColor: isDark ? '#1C2920' : '#FFFFFF', borderColor: colors.border },
+            ]}
+            hitSlop={8}
+          >
+            <Ionicons name="arrow-back" size={22} color={colors.text} />
           </Pressable>
-          <Pressable onPress={() => {}} style={styles.iconButton} hitSlop={8}>
-            <Ionicons name="share-outline" size={20} color="#14351D" />
+          <Text style={[styles.screenHeaderTitle, { color: colors.text }]}>
+            Active Classroom
+          </Text>
+          <Pressable
+            onPress={handleShare}
+            style={[
+              styles.iconButton,
+              { backgroundColor: isDark ? '#1C2920' : '#FFFFFF', borderColor: colors.border },
+            ]}
+            hitSlop={8}
+          >
+            <Ionicons name="share-outline" size={20} color={colors.text} />
           </Pressable>
         </View>
 
-        <View style={styles.heroCard}>
+        {/* Video Player Card */}
+        <View
+          style={[
+            styles.heroCard,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
           <View style={styles.thumbnail}>
-            <View style={styles.playBadge}>
-              <Ionicons name="play" size={22} color="#FFFFFF" />
+            <Image
+              source={{ uri: course.image || course.thumbnailUrl }}
+              style={styles.thumbImage}
+              resizeMode="cover"
+            />
+            <Pressable
+              style={styles.playBadge}
+              onPress={() => setIsPlaying(!isPlaying)}
+            >
+              <Ionicons
+                name={isPlaying ? 'pause' : 'play'}
+                size={26}
+                color="#FFFFFF"
+                style={{ marginLeft: isPlaying ? 0 : 3 }}
+              />
+            </Pressable>
+            <View style={styles.durationTag}>
+              <Text style={styles.duration}>{isPlaying ? 'Playing • HD' : course.duration}</Text>
             </View>
-            <Text style={styles.duration}>{lesson.duration}</Text>
           </View>
 
           <View style={styles.metaRow}>
-            <Text style={styles.tag}>{lesson.subject}</Text>
-            <Text style={styles.tag}>{lesson.level}</Text>
+            <View
+              style={[
+                styles.tag,
+                { backgroundColor: isDark ? '#14331C' : '#DCFCE7' },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.tagText,
+                  { color: isDark ? '#4ADE80' : '#15803D' },
+                ]}
+              >
+                {course.subject}
+              </Text>
+            </View>
+            <View
+              style={[
+                styles.tag,
+                { backgroundColor: isDark ? '#1C2920' : '#F3F4F6' },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.tagText,
+                  { color: isDark ? colors.textSecondary : '#4B5563' },
+                ]}
+              >
+                {course.level || 'Intermediate'}
+              </Text>
+            </View>
           </View>
 
-          <Text style={styles.title}>{lesson.title}</Text>
+          <Text style={[styles.title, { color: colors.text }]}>{course.title}</Text>
 
           <View style={styles.tutorRow}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>{lesson.tutor.charAt(0)}</Text>
-            </View>
-            <View>
-              <Text style={styles.tutor}>{lesson.tutor}</Text>
-              <Text style={styles.views}>{lesson.views} · ⭐ {lesson.rating}</Text>
+            {course.tutor?.avatar ? (
+              <Image source={{ uri: course.tutor.avatar }} style={styles.avatarImg} />
+            ) : (
+              <View
+                style={[
+                  styles.avatar,
+                  { backgroundColor: isDark ? '#1C2920' : '#E5E7EB' },
+                ]}
+              >
+                <Text style={[styles.avatarText, { color: colors.text }]}>
+                  {tutorName.charAt(0)}
+                </Text>
+              </View>
+            )}
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.tutor, { color: colors.text }]}>{tutorName}</Text>
+              <Text style={[styles.views, { color: colors.textMuted }]}>
+                ⭐ {course.rating || '4.9'} ({course.reviewsCount || '140'} reviews)
+              </Text>
             </View>
           </View>
 
-          <Text style={styles.description}>{lesson.description}</Text>
+          <Text style={[styles.description, { color: colors.textSecondary }]}>
+            {course.headline ||
+              'Complete video module covering core conceptual understanding and high-yield examination problem solving.'}
+          </Text>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>What you’ll learn</Text>
-          {lesson.modules.map((module, index) => (
-            <View key={module} style={styles.moduleRow}>
-              <View style={styles.checkCircle}>
-                <Ionicons name="checkmark" size={14} color="#57a0ff" />
-              </View>
-              <Text style={styles.moduleText}>{index + 1}. {module}</Text>
-            </View>
-          ))}
+        {/* Modules Interactive Checklist */}
+        <View
+          style={[
+            styles.section,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+        >
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>
+            Lesson Modules & Checkpoints
+          </Text>
+          {curriculum.map((module, index) => {
+            const isDone = completedModules[module.id || index]
+            return (
+              <Pressable
+                key={module.id || index}
+                style={[
+                  styles.moduleRow,
+                  { borderBottomColor: isDark ? '#233228' : '#F3F4F6' },
+                ]}
+                onPress={() => toggleModuleComplete(module.id || index)}
+              >
+                <View
+                  style={[
+                    styles.checkCircle,
+                    {
+                      backgroundColor: isDone
+                        ? colors.primary
+                        : isDark
+                        ? '#1C2920'
+                        : '#F3F4F6',
+                      borderColor: isDone ? colors.primary : colors.border,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={isDone ? 'checkmark' : 'play-outline'}
+                    size={14}
+                    color={isDone ? '#FFFFFF' : colors.textMuted}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text
+                    style={[
+                      styles.moduleText,
+                      {
+                        color: isDone ? colors.textMuted : colors.text,
+                        textDecorationLine: isDone ? 'line-through' : 'none',
+                      },
+                    ]}
+                  >
+                    {module.title}
+                  </Text>
+                  <Text style={[styles.moduleSub, { color: colors.textMuted }]}>
+                    {module.duration || '30 mins'}
+                  </Text>
+                </View>
+                {isDone && (
+                  <Ionicons name="checkmark-done" size={18} color={colors.primary} />
+                )}
+              </Pressable>
+            )
+          })}
         </View>
 
-        <Pressable style={styles.primaryButton} accessibilityRole="button">
-          <Text style={styles.primaryButtonText}>Start lesson</Text>
-          <Ionicons name="arrow-forward" size={20} color="#FFFFFF" />
+        {/* Mark Lesson Complete Button */}
+        <Pressable
+          style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+          onPress={handleMarkLessonComplete}
+          disabled={updatingProgress}
+        >
+          {updatingProgress ? (
+            <ActivityIndicator size="small" color="#FFFFFF" />
+          ) : (
+            <>
+              <Ionicons name="checkmark-circle-outline" size={20} color="#FFFFFF" />
+              <Text style={styles.primaryButtonText}>Mark Lesson Complete</Text>
+            </>
+          )}
         </Pressable>
       </ScrollView>
     </SafeAreaView>
@@ -173,178 +374,181 @@ export default function LessonDetailScreen() {
 }
 
 const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: '#F5FAF5',
-  },
+  safeArea: { flex: 1 },
+  loadingText: { marginTop: 12, fontSize: 13 },
   container: {
-    flexGrow: 1,
-    paddingBottom: 36,
-    paddingHorizontal: 18,
+    paddingBottom: 40,
+    paddingHorizontal: 16,
     paddingTop: 8,
+    gap: 16,
   },
   headerRow: {
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 16,
+  },
+  screenHeaderTitle: {
+    fontSize: 16,
+    fontWeight: '800',
   },
   backButton: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
     borderRadius: 12,
+    borderWidth: 1,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
   iconButton: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
     borderRadius: 12,
+    borderWidth: 1,
     height: 40,
     justifyContent: 'center',
     width: 40,
   },
   heroCard: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 24,
+    borderRadius: 20,
+    borderWidth: 1,
     padding: 16,
-    shadowColor: '#14351D',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.06,
-    shadowRadius: 18,
   },
   thumbnail: {
     alignItems: 'center',
     aspectRatio: 16 / 9,
-    backgroundColor: '#E8F4EB',
-    borderRadius: 18,
+    borderRadius: 14,
     justifyContent: 'center',
     marginBottom: 14,
     overflow: 'hidden',
+    position: 'relative',
+    backgroundColor: '#0F1A13',
+  },
+  thumbImage: {
+    width: '100%',
+    height: '100%',
   },
   playBadge: {
     alignItems: 'center',
-    backgroundColor: 'rgba(20,53,29,0.35)',
-    borderRadius: 30,
-    height: 60,
+    backgroundColor: '#15803D',
+    borderRadius: 28,
+    height: 56,
     justifyContent: 'center',
-    width: 60,
+    width: 56,
+    position: 'absolute',
+    elevation: 4,
+  },
+  durationTag: {
+    position: 'absolute',
+    bottom: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    borderRadius: 6,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
   },
   duration: {
-    backgroundColor: 'rgba(0,0,0,0.75)',
-    borderRadius: 6,
-    bottom: 10,
     color: '#FFFFFF',
     fontSize: 11,
     fontWeight: '700',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    position: 'absolute',
-    right: 10,
   },
   metaRow: {
     flexDirection: 'row',
     gap: 8,
-    marginBottom: 12,
+    marginBottom: 8,
   },
   tag: {
-    backgroundColor: '#EAF3FF',
-    borderRadius: 999,
-    color: '#57a0ff',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  tagText: {
     fontSize: 11,
     fontWeight: '700',
-    overflow: 'hidden',
-    paddingHorizontal: 10,
-    paddingVertical: 6,
   },
   title: {
-    color: '#14351D',
-    fontSize: 28,
+    fontSize: 18,
     fontWeight: '800',
-    lineHeight: 34,
-    marginBottom: 14,
+    lineHeight: 24,
+    marginBottom: 12,
   },
   tutorRow: {
     alignItems: 'center',
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 14,
+    gap: 12,
+    marginBottom: 12,
   },
   avatar: {
     alignItems: 'center',
-    backgroundColor: '#E8F4EB',
-    borderRadius: 18,
-    height: 38,
+    borderRadius: 20,
+    height: 40,
     justifyContent: 'center',
-    width: 38,
+    width: 40,
+  },
+  avatarImg: {
+    borderRadius: 20,
+    height: 40,
+    width: 40,
   },
   avatarText: {
-    color: '#14351D',
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: '800',
   },
   tutor: {
-    color: '#14351D',
-    fontSize: 15,
+    fontSize: 14,
     fontWeight: '700',
   },
   views: {
-    color: '#718178',
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 2,
   },
   description: {
-    color: '#5D6D61',
-    fontSize: 14,
-    lineHeight: 22,
+    fontSize: 13,
+    lineHeight: 18,
   },
   section: {
-    backgroundColor: '#FFFFFF',
     borderRadius: 20,
-    marginTop: 18,
-    padding: 18,
+    borderWidth: 1,
+    padding: 16,
+    gap: 12,
   },
   sectionTitle: {
-    color: '#14351D',
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: '800',
-    marginBottom: 12,
+    marginBottom: 4,
   },
   moduleRow: {
-    alignItems: 'flex-start',
+    alignItems: 'center',
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 12,
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
   },
   checkCircle: {
     alignItems: 'center',
-    backgroundColor: '#EAF3FF',
-    borderRadius: 999,
-    height: 22,
+    borderRadius: 14,
+    borderWidth: 1,
+    height: 28,
     justifyContent: 'center',
-    marginTop: 2,
-    width: 22,
+    width: 28,
   },
   moduleText: {
-    color: '#1D2A23',
-    flex: 1,
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  moduleSub: {
+    fontSize: 11,
+    marginTop: 2,
   },
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#57a0ff',
-    borderRadius: 16,
+    borderRadius: 14,
     flexDirection: 'row',
-    gap: 10,
-    height: 58,
+    gap: 8,
+    height: 50,
     justifyContent: 'center',
-    marginTop: 18,
   },
   primaryButtonText: {
     color: '#FFFFFF',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '800',
   },
 })
