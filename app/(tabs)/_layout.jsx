@@ -101,20 +101,10 @@ export default function TabLayout() {
       <Tabs.Screen
         name="upload"
         options={{
-          href: canCreateContent ? undefined : null,
-          title: '',
-          tabBarButton: () =>
-            canCreateContent ? (
-              <Pressable
-                onPress={handleUploadAction}
-                accessibilityLabel={isAdmin ? 'Open admin panel' : 'Upload lesson'}
-                style={styles.uploadButtonWrapper}
-              >
-                <View style={styles.uploadButton}>
-                  <Ionicons name="add" size={30} color="#FFFFFF" />
-                </View>
-              </Pressable>
-            ) : null,
+          title: 'Upload',
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'add-circle' : 'add-circle-outline'} size={size + 3} color={color} />
+          ),
         }}
       />
       <Tabs.Screen
