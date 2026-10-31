@@ -14,7 +14,7 @@ service cloud.firestore {
     }
 
     function isAdmin() {
-      return isSignedIn() && getUser(request.auth.uid).role == 'admin';
+      return isSignedIn() && request.auth.token.admin == true;
     }
 
     function isApprovedTutor() {
@@ -30,22 +30,64 @@ service cloud.firestore {
         && request.resource.data.email is string
         && request.resource.data.displayName is string
         && request.resource.data.role in ['student', 'tutor', 'admin']
+        && (request.resource.data.role != 'admin' || isAdmin())
+        && (request.resource.data.get('admin', false) != true || isAdmin())
+        && (request.resource.data.get('approved', false) != true || isAdmin())
         && request.resource.data.createdAt is timestamp
         && request.resource.data.updatedAt is timestamp;
 
       allow read: if isOwner(userId) || isAdmin();
-      allow update: if isOwner(userId) || isAdmin();
+      allow update: if isAdmin()
+        || (isOwner(userId)
+          && request.resource.data.role != 'admin'
+          && request.resource.data.get('admin', false) != true
+          && (request.resource.data.get('approved', false) != true
+            || resource.data.get('approved', false) == true));
       allow delete: if false;
     }
 
     match /lessons/{lessonId} {
       allow read: if true;
-      allow create: if isSignedIn() && (isApprovedTutor() || isAdmin())
+      allow create: if isSignedIn() && (isAdmin() || isApprovedTutor())
         && request.resource.data.createdBy == request.auth.uid
         && request.resource.data.title is string
         && request.resource.data.subject is string
+        && request.resource.data.videoUrl is string
+        && request.resource.data.videoUrl.size() > 0
         && request.resource.data.createdAt is timestamp;
-      allow update, delete: if isSignedIn() && (isAdmin() || request.auth.uid == resource.data.createdBy);
+      allow update: if isSignedIn()
+        && (isAdmin()
+          || (request.auth.uid == resource.data.createdBy
+            && request.resource.data.createdBy == resource.data.createdBy));
+      allow delete: if isSignedIn()
+        && (isAdmin() || request.auth.uid == resource.data.createdBy);
+    }
+
+    match /courses/{courseId} {
+      allow read: if true;
+      allow create: if isSignedIn() && (isAdmin() || isApprovedTutor())
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.title is string
+        && request.resource.data.subject is string
+        && request.resource.data.videoUrl is string
+        && request.resource.data.videoUrl.size() > 0
+        && request.resource.data.createdAt is timestamp;
+      allow update: if isSignedIn()
+        && (isAdmin()
+          || (request.auth.uid == resource.data.createdBy
+            && request.resource.data.createdBy == resource.data.createdBy));
+      allow delete: if isSignedIn()
+        && (isAdmin() || request.auth.uid == resource.data.createdBy);
+    }
+
+    match /enrollments/{enrollmentId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && request.auth.uid == resource.data.userId);
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if isAdmin()
+        || (isSignedIn() && request.auth.uid == resource.data.userId);
     }
 
     match /{document=**} {

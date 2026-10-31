@@ -4,6 +4,7 @@ import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth'
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
 import React, { useState } from 'react'
 import {
+  Alert,
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
@@ -17,6 +18,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../../firebase/config'
+import { verifyAdminAccess } from '../../firebase/adminAccess'
 import { useTheme } from '../../context/ThemeContext'
 import Header from '../components/header'
 
@@ -117,7 +119,15 @@ export default function SignUp() {
       const displayName = form.name.trim()
       await updateProfile(credential.user, { displayName })
 
-      const isEmailAdmin = email.toLowerCase().includes('admin') || email.toLowerCase().endsWith('@klaso.edu')
+      let isEmailAdmin = false
+      let emailVerificationRequired = false
+      try {
+        const adminVerification = await verifyAdminAccess(credential.user)
+        isEmailAdmin = adminVerification.isAdmin
+        emailVerificationRequired = adminVerification.emailVerificationRequired
+      } catch (verificationError) {
+        console.error('Unable to verify configured admin access:', verificationError)
+      }
       const role = isEmailAdmin ? 'admin' : selectedRole
 
       const userData = {
@@ -149,7 +159,15 @@ export default function SignUp() {
 
       await setDoc(doc(db, 'users', credential.user.uid), userData)
 
-      router.replace('/(tabs)')
+      if (emailVerificationRequired) {
+        Alert.alert(
+          'Verify your admin email',
+          'We sent a verification link to your configured admin email. Verify it, then sign in again to activate admin access.',
+          [{ text: 'Continue', onPress: () => router.replace('/(tabs)') }]
+        )
+      } else {
+        router.replace('/(tabs)')
+      }
     } catch (error) {
       console.log('Sign up error:', error)
       const message =
@@ -192,23 +210,40 @@ export default function SignUp() {
               style={[
                 styles.roleCard,
                 { backgroundColor: colors.card, borderColor: colors.border },
-                selectedRole === 'student' && styles.roleCardActive,
+                selectedRole === 'student' && {
+                  backgroundColor: colors.primaryLight,
+                  borderColor: colors.primary,
+                  shadowColor: colors.primary,
+                },
               ]}
               onPress={() => setSelectedRole('student')}
             >
-              <View style={[styles.roleIconBox, selectedRole === 'student' && styles.roleIconBoxActive]}>
+              <View
+                style={[
+                  styles.roleIconBox,
+                  { backgroundColor: colors.borderSubtle },
+                  selectedRole === 'student' && { backgroundColor: colors.primaryLight },
+                ]}
+              >
                 <Ionicons
                   name="school"
                   size={24}
-                  color={selectedRole === 'student' ? '#15803D' : colors.textMuted}
+                  color={selectedRole === 'student' ? colors.primary : colors.textMuted}
                 />
               </View>
-              <Text style={[styles.roleTitle, { color: colors.text }, selectedRole === 'student' && styles.roleTitleActive]}>
+              <Text style={[styles.roleTitle, { color: selectedRole === 'student' ? colors.primary : colors.text }]}>
                 Student
               </Text>
               <Text style={[styles.roleSub, { color: colors.textMuted }]}>Learn, practice & book tutors</Text>
-              <View style={[styles.radioDot, selectedRole === 'student' && styles.radioDotActive]}>
-                {selectedRole === 'student' && <View style={styles.radioInner} />}
+              <View
+                style={[
+                  styles.radioDot,
+                  { borderColor: selectedRole === 'student' ? colors.primary : colors.border },
+                ]}
+              >
+                {selectedRole === 'student' && (
+                  <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />
+                )}
               </View>
             </Pressable>
 
@@ -217,23 +252,40 @@ export default function SignUp() {
               style={[
                 styles.roleCard,
                 { backgroundColor: colors.card, borderColor: colors.border },
-                selectedRole === 'tutor' && styles.roleCardActive,
+                selectedRole === 'tutor' && {
+                  backgroundColor: colors.primaryLight,
+                  borderColor: colors.primary,
+                  shadowColor: colors.primary,
+                },
               ]}
               onPress={() => setSelectedRole('tutor')}
             >
-              <View style={[styles.roleIconBox, selectedRole === 'tutor' && styles.roleIconBoxActive]}>
+              <View
+                style={[
+                  styles.roleIconBox,
+                  { backgroundColor: colors.borderSubtle },
+                  selectedRole === 'tutor' && { backgroundColor: colors.primaryLight },
+                ]}
+              >
                 <Ionicons
                   name="easel"
                   size={24}
-                  color={selectedRole === 'tutor' ? '#15803D' : colors.textMuted}
+                  color={selectedRole === 'tutor' ? colors.primary : colors.textMuted}
                 />
               </View>
-              <Text style={[styles.roleTitle, { color: colors.text }, selectedRole === 'tutor' && styles.roleTitleActive]}>
+              <Text style={[styles.roleTitle, { color: selectedRole === 'tutor' ? colors.primary : colors.text }]}>
                 Tutor
               </Text>
               <Text style={[styles.roleSub, { color: colors.textMuted }]}>Teach, mentor & earn income</Text>
-              <View style={[styles.radioDot, selectedRole === 'tutor' && styles.radioDotActive]}>
-                {selectedRole === 'tutor' && <View style={styles.radioInner} />}
+              <View
+                style={[
+                  styles.radioDot,
+                  { borderColor: selectedRole === 'tutor' ? colors.primary : colors.border },
+                ]}
+              >
+                {selectedRole === 'tutor' && (
+                  <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />
+                )}
               </View>
             </Pressable>
           </View>
@@ -268,28 +320,37 @@ export default function SignUp() {
 
             {/* Tutor specific inputs */}
             {selectedRole === 'tutor' && (
-              <View style={styles.tutorExtraBox}>
+              <View
+                style={[
+                  styles.tutorExtraBox,
+                  { backgroundColor: colors.primaryMint, borderColor: colors.border },
+                ]}
+              >
                 <View style={styles.tutorHeader}>
-                  <Ionicons name="sparkles" size={16} color="#15803D" />
-                  <Text style={styles.tutorHeaderTitle}>Tutor Teaching Profile</Text>
+                  <Ionicons name="sparkles" size={16} color={colors.primary} />
+                  <Text style={[styles.tutorHeaderTitle, { color: colors.primary }]}>Tutor Teaching Profile</Text>
                 </View>
 
                 {/* Subject Selector */}
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.label}>Primary Teaching Subject</Text>
+                  <Text style={[styles.label, { color: colors.text }]}>Primary Teaching Subject</Text>
                   <View style={styles.subjectPillsRow}>
                     {SUBJECTS.map((sub) => {
                       const isSubSelected = form.subject === sub
                       return (
                         <Pressable
                           key={sub}
-                          style={[styles.subjectPill, isSubSelected && styles.subjectPillActive]}
+                          style={[
+                            styles.subjectPill,
+                            { backgroundColor: colors.card, borderColor: colors.border },
+                            isSubSelected && { backgroundColor: colors.primary, borderColor: colors.primary },
+                          ]}
                           onPress={() => updateField('subject', sub)}
                         >
                           <Text
                             style={[
                               styles.subjectPillText,
-                              isSubSelected && styles.subjectPillTextActive,
+                              { color: isSubSelected ? '#FFFFFF' : colors.textSecondary },
                             ]}
                           >
                             {sub}
@@ -345,20 +406,24 @@ export default function SignUp() {
             {/* Student specific inputs */}
             {selectedRole === 'student' && (
               <View style={styles.fieldGroup}>
-                <Text style={styles.label}>Primary Target Exam / Learning Goal</Text>
+                <Text style={[styles.label, { color: colors.text }]}>Primary Target Exam / Learning Goal</Text>
                 <View style={styles.subjectPillsRow}>
                   {['WAEC / WASSCE', 'JAMB / UTME', 'University Courses', 'General Skills'].map((exam) => {
                     const isExamSelected = form.targetExam === exam
                     return (
                       <Pressable
                         key={exam}
-                        style={[styles.subjectPill, isExamSelected && styles.subjectPillActive]}
+                        style={[
+                          styles.subjectPill,
+                          { backgroundColor: colors.card, borderColor: colors.border },
+                          isExamSelected && { backgroundColor: colors.primary, borderColor: colors.primary },
+                        ]}
                         onPress={() => updateField('targetExam', exam)}
                       >
                         <Text
                           style={[
                             styles.subjectPillText,
-                            isExamSelected && styles.subjectPillTextActive,
+                            { color: isExamSelected ? '#FFFFFF' : colors.textSecondary },
                           ]}
                         >
                           {exam}
@@ -418,30 +483,36 @@ export default function SignUp() {
               <View
                 style={[
                   styles.checkbox,
-                  acceptedTerms && styles.checkboxChecked,
-                  touched.terms && errors.terms && styles.checkboxError,
+                  {
+                    backgroundColor: acceptedTerms ? colors.primary : colors.card,
+                    borderColor: touched.terms && errors.terms
+                      ? colors.danger
+                      : acceptedTerms
+                      ? colors.primary
+                      : colors.border,
+                  },
                 ]}
               >
                 {acceptedTerms && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
               </View>
-              <Text style={styles.termsText}>
+              <Text style={[styles.termsText, { color: colors.textMuted }]}>
                 I agree to Klaso&apos;s{' '}
-                <Text style={styles.termsHighlight}>Terms of Service</Text> and{' '}
-                <Text style={styles.termsHighlight}>Privacy Policy</Text>.
+                <Text style={[styles.termsHighlight, { color: colors.primary }]}>Terms of Service</Text> and{' '}
+                <Text style={[styles.termsHighlight, { color: colors.primary }]}>Privacy Policy</Text>.
               </Text>
             </Pressable>
 
             {!!errors.terms && (
               <View style={styles.inlineErrorRow}>
-                <Ionicons name="alert-circle" size={14} color="#EF4444" />
-                <Text style={styles.error}>{errors.terms}</Text>
+                <Ionicons name="alert-circle" size={14} color={colors.danger} />
+                <Text style={[styles.error, { color: colors.danger }]}>{errors.terms}</Text>
               </View>
             )}
 
             {!!errors.form && (
-              <View style={styles.bannerError}>
-                <Ionicons name="warning-outline" size={18} color="#DC2626" />
-                <Text style={styles.bannerErrorText}>{errors.form}</Text>
+              <View style={[styles.bannerError, { backgroundColor: colors.dangerLight }]}>
+                <Ionicons name="warning-outline" size={18} color={colors.danger} />
+                <Text style={[styles.bannerErrorText, { color: colors.danger }]}>{errors.form}</Text>
               </View>
             )}
 
@@ -452,6 +523,7 @@ export default function SignUp() {
               disabled={loading}
               style={({ pressed }) => [
                 styles.primaryButton,
+                { backgroundColor: colors.primary, shadowColor: colors.primary },
                 pressed && styles.pressed,
                 loading && styles.buttonDisabled,
               ]}
@@ -471,9 +543,9 @@ export default function SignUp() {
 
           {/* Bottom Login Link */}
           <View style={styles.bottomPrompt}>
-            <Text style={styles.promptText}>Already have an account?</Text>
+            <Text style={[styles.promptText, { color: colors.textMuted }]}>Already have an account?</Text>
             <Pressable onPress={() => router.push('/(auth)/login')}>
-              <Text style={styles.linkText}> Log in</Text>
+              <Text style={[styles.linkText, { color: colors.primary }]}> Log in</Text>
             </Pressable>
           </View>
         </ScrollView>
@@ -494,7 +566,7 @@ function Field({
   inputStyle,
   ...inputProps
 }) {
-  const { colors, isDark } = useTheme()
+  const { colors } = useTheme()
   const [isFocused, setIsFocused] = useState(false)
 
   return (
@@ -507,16 +579,16 @@ function Field({
             backgroundColor: colors.inputBg,
             borderColor: colors.border,
           },
-          isFocused && styles.inputFocused,
-          isTouched && error && styles.inputError,
-          isTouched && isValid && styles.inputSuccess,
+          isFocused && { borderColor: colors.primary },
+          isTouched && error && { borderColor: colors.danger, backgroundColor: colors.dangerLight },
+          isTouched && isValid && { borderColor: colors.primary },
         ]}
       >
         {leftIcon && (
           <Ionicons
             name={leftIcon}
             size={18}
-            color={isTouched && error ? '#EF4444' : isFocused ? colors.primary : colors.textMuted}
+            color={isTouched && error ? colors.danger : isFocused ? colors.primary : colors.textMuted}
             style={styles.leftIcon}
           />
         )}
@@ -533,23 +605,23 @@ function Field({
         />
 
         {isTouched && isValid && (
-          <Ionicons name="checkmark-circle" size={18} color="#15803D" style={styles.statusIcon} />
+          <Ionicons name="checkmark-circle" size={18} color={colors.primary} style={styles.statusIcon} />
         )}
 
         {isTouched && error && (
-          <Ionicons name="alert-circle" size={18} color="#EF4444" style={styles.statusIcon} />
+          <Ionicons name="alert-circle" size={18} color={colors.danger} style={styles.statusIcon} />
         )}
 
         {rightIcon && (
           <Pressable accessibilityLabel="Toggle visibility" onPress={onRightIconPress} hitSlop={10}>
-            <Ionicons name={rightIcon} size={18} color="#718178" />
+            <Ionicons name={rightIcon} size={18} color={colors.textMuted} />
           </Pressable>
         )}
       </View>
 
       {isTouched && !!error && (
         <View style={styles.inlineErrorRow}>
-          <Text style={styles.error}>{error}</Text>
+          <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
         </View>
       )}
     </View>
@@ -557,17 +629,15 @@ function Field({
 }
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#FFFFFF' },
-  headerContainer: { backgroundColor: '#FFFFFF' },
+  safeArea: { flex: 1 },
   flex: { flex: 1 },
   container: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 36 },
 
   headingWrap: { marginBottom: 20, marginTop: 8 },
-  title: { color: '#14351D', fontSize: 24, fontWeight: '900', letterSpacing: -0.4 },
-  subtitle: { color: '#718178', fontSize: 14, marginTop: 4, lineHeight: 20 },
+  title: { fontSize: 24, fontWeight: '900', letterSpacing: -0.4 },
+  subtitle: { fontSize: 14, marginTop: 4, lineHeight: 20 },
 
   roleSectionLabel: {
-    color: '#14351D',
     fontSize: 14,
     fontWeight: '800',
     marginBottom: 10,
@@ -580,51 +650,31 @@ const styles = StyleSheet.create({
     marginBottom: 20,
   },
   roleCard: {
-    backgroundColor: '#F5FAF5',
-    borderColor: '#DFE7E1',
     borderRadius: 16,
     borderWidth: 1.5,
     flex: 1,
     padding: 14,
     position: 'relative',
   },
-  roleCardActive: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#15803D',
-    shadowColor: '#15803D',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.12,
-    shadowRadius: 8,
-  },
   roleIconBox: {
     alignItems: 'center',
-    backgroundColor: '#E8EFEA',
     borderRadius: 12,
     height: 42,
     justifyContent: 'center',
     marginBottom: 10,
     width: 42,
   },
-  roleIconBoxActive: {
-    backgroundColor: '#DCFCE7',
-  },
   roleTitle: {
-    color: '#14351D',
     fontSize: 16,
     fontWeight: '800',
   },
-  roleTitleActive: {
-    color: '#15803D',
-  },
   roleSub: {
-    color: '#718178',
     fontSize: 11,
     lineHeight: 15,
     marginTop: 3,
   },
   radioDot: {
     alignItems: 'center',
-    borderColor: '#CDE4D4',
     borderRadius: 9,
     borderWidth: 1.5,
     height: 18,
@@ -634,11 +684,7 @@ const styles = StyleSheet.create({
     top: 12,
     width: 18,
   },
-  radioDotActive: {
-    borderColor: '#15803D',
-  },
   radioInner: {
-    backgroundColor: '#15803D',
     borderRadius: 5,
     height: 10,
     width: 10,
@@ -646,42 +692,33 @@ const styles = StyleSheet.create({
 
   form: { gap: 16 },
   fieldGroup: { gap: 6 },
-  label: { color: '#14351D', fontSize: 13, fontWeight: '700' },
+  label: { fontSize: 13, fontWeight: '700' },
 
   inputWrap: {
     alignItems: 'center',
-    backgroundColor: '#F7FAF7',
-    borderColor: '#DFE7E1',
     borderRadius: 14,
     borderWidth: 1.5,
     flexDirection: 'row',
     minHeight: 52,
     paddingHorizontal: 14,
   },
-  inputFocused: { borderColor: '#15803D', backgroundColor: '#FFFFFF' },
-  inputError: { borderColor: '#EF4444', backgroundColor: '#FEF2F2' },
-  inputSuccess: { borderColor: '#15803D' },
-
-  input: { color: '#14351D', flex: 1, fontSize: 14, paddingVertical: 12 },
+  input: { flex: 1, fontSize: 14, paddingVertical: 12 },
   leftIcon: { marginRight: 10 },
   statusIcon: { marginLeft: 6, marginRight: 4 },
 
   inlineErrorRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  error: { color: '#EF4444', fontSize: 12, fontWeight: '600' },
+  error: { fontSize: 12, fontWeight: '600' },
 
   bannerError: {
     alignItems: 'center',
-    backgroundColor: '#FEE2E2',
     borderRadius: 12,
     flexDirection: 'row',
     gap: 8,
     padding: 12,
   },
-  bannerErrorText: { color: '#991B1B', flex: 1, fontSize: 13, fontWeight: '600' },
+  bannerErrorText: { flex: 1, fontSize: 13, fontWeight: '600' },
 
   tutorExtraBox: {
-    backgroundColor: '#F0FDF4',
-    borderColor: '#BBF7D0',
     borderRadius: 16,
     borderWidth: 1,
     gap: 14,
@@ -693,11 +730,7 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 4,
   },
-  tutorHeaderTitle: {
-    color: '#166534',
-    fontSize: 14,
-    fontWeight: '800',
-  },
+  tutorHeaderTitle: { fontSize: 14, fontWeight: '800' },
   subjectPillsRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -705,53 +738,36 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   subjectPill: {
-    backgroundColor: '#FFFFFF',
-    borderColor: '#DFE7E1',
     borderRadius: 10,
     borderWidth: 1,
     paddingHorizontal: 12,
     paddingVertical: 7,
   },
-  subjectPillActive: {
-    backgroundColor: '#15803D',
-    borderColor: '#15803D',
-  },
   subjectPillText: {
-    color: '#4B5563',
     fontSize: 12,
     fontWeight: '600',
-  },
-  subjectPillTextActive: {
-    color: '#FFFFFF',
-    fontWeight: '700',
   },
 
   termsRow: { alignItems: 'center', flexDirection: 'row', gap: 10, marginTop: 6 },
   checkbox: {
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
-    borderColor: '#CBD5E1',
     borderRadius: 6,
     borderWidth: 1.5,
     height: 20,
     justifyContent: 'center',
     width: 20,
   },
-  checkboxChecked: { backgroundColor: '#15803D', borderColor: '#15803D' },
-  checkboxError: { borderColor: '#EF4444' },
-  termsText: { color: '#718178', flex: 1, fontSize: 12, lineHeight: 18 },
-  termsHighlight: { color: '#15803D', fontWeight: '700' },
+  termsText: { flex: 1, fontSize: 12, lineHeight: 18 },
+  termsHighlight: { fontWeight: '700' },
 
   primaryButton: {
     alignItems: 'center',
-    backgroundColor: '#15803D',
     borderRadius: 14,
     flexDirection: 'row',
     gap: 8,
     height: 52,
     justifyContent: 'center',
     marginTop: 8,
-    shadowColor: '#15803D',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.18,
     shadowRadius: 8,
@@ -760,7 +776,7 @@ const styles = StyleSheet.create({
   primaryButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
 
   bottomPrompt: { alignItems: 'center', flexDirection: 'row', justifyContent: 'center', marginTop: 28 },
-  promptText: { color: '#718178', fontSize: 14 },
-  linkText: { color: '#15803D', fontSize: 14, fontWeight: '800' },
+  promptText: { fontSize: 14 },
+  linkText: { fontSize: 14, fontWeight: '800' },
   pressed: { opacity: 0.85 },
 })

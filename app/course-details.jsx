@@ -27,108 +27,124 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../firebase/config'
 import { useTheme } from '../context/ThemeContext'
-import { REAL_SAMPLE_COURSES } from '../firebase/seedData'
 
 export default function CourseDetailsScreen() {
   const router = useRouter()
   const params = useLocalSearchParams()
   const { colors, isDark } = useTheme()
 
-  const courseId = params.id ? String(params.id) : '1'
+  const courseId = params.id ? String(params.id) : ''
   const [course, setCourse] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState('')
   const [activeTab, setActiveTab] = useState('overview')
   const [isBookmarked, setIsBookmarked] = useState(false)
   const [savingBookmark, setSavingBookmark] = useState(false)
 
-  // Fetch course from Firestore
   useEffect(() => {
+    let active = true
+
     async function fetchCourseDetails() {
       setLoading(true)
+      setLoadError('')
       try {
+        if (!courseId) {
+          setCourse(null)
+          setLoadError('No course was selected.')
+          return
+        }
+
         const docRef = doc(db, 'courses', courseId)
         const docSnap = await getDoc(docRef)
 
-        if (docSnap.exists()) {
-          const data = docSnap.data()
-          setCourse({
-            id: docSnap.id,
-            title: data.title || params.title || 'Course Details',
-            headline:
-              data.headline ||
-              'Master this subject with structured video lessons, assignments, and past questions.',
-            subject: data.subject || 'General Studies',
-            level: data.level || 'Beginner to Intermediate',
-            rating: data.rating || 4.9,
-            reviewsCount: data.reviewsCount || 140,
-            studentsCount: data.studentsCount || '850',
-            duration: data.duration || '6 hours total',
-            lessonsCount: data.lessonsCount || data.curriculum?.length || 10,
-            price: typeof data.price === 'number' ? data.price : 3500,
-            originalPrice: data.originalPrice || 7000,
-            image:
-              data.thumbnailUrl ||
-              data.image ||
-              'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=800&q=80',
-            tutor:
-              typeof data.tutor === 'object'
-                ? data.tutor
-                : {
-                    name: data.tutor || 'Verified Instructor',
-                    title: 'Senior Academic Lecturer & Specialist',
-                    avatar:
-                      'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80',
-                    rating: 4.95,
-                    students: '500+',
-                  },
-            learningPoints: data.learningPoints || [
-              'Master fundamental concepts and critical formulas',
-              'Solve past WAEC, JAMB & university examination questions',
-              'Develop intuitive problem-solving strategies',
-              'Earn a verified digital certificate of completion',
-            ],
-            curriculum: data.curriculum || [
-              {
-                id: 'm1',
-                title: 'Module 1: Foundational Principles & Introduction',
-                duration: '45 mins',
-                isFree: true,
-              },
-              {
-                id: 'm2',
-                title: 'Module 2: Core Concepts & Step-by-Step Drills',
-                duration: '1h 10m',
-                isFree: false,
-              },
-              {
-                id: 'm3',
-                title: 'Module 3: Advanced Applications & Exam Questions',
-                duration: '1h 30m',
-                isFree: false,
-              },
-            ],
-          })
-        } else {
-          // Fallback to sample course
-          const fallback =
-            REAL_SAMPLE_COURSES.find((c) => c.title === params.title) ||
-            REAL_SAMPLE_COURSES[0]
-          setCourse({
-            id: courseId,
-            ...fallback,
-            image: fallback.thumbnailUrl,
+        if (!docSnap.exists()) {
+          setCourse(null)
+          setLoadError('This course could not be found or is no longer available.')
+          return
+        }
+
+        const data = docSnap.data()
+        let curriculum = Array.isArray(data.curriculum) ? data.curriculum : []
+
+        if (curriculum.length === 0 && data.lessonId) {
+          const lessonSnapshot = await getDoc(doc(db, 'lessons', data.lessonId))
+          if (lessonSnapshot.exists()) {
+            const lesson = lessonSnapshot.data()
+            curriculum = [{
+              id: lessonSnapshot.id,
+              title: lesson.title,
+              description: lesson.description,
+              duration: lesson.duration,
+              isFree: lesson.isFree === true,
+              videoUrl: lesson.videoUrl,
+            }]
+          }
+        } else if (curriculum.length === 0) {
+          const lessonSnapshot = await getDocs(
+            query(collection(db, 'lessons'), where('courseId', '==', courseId))
+          )
+          curriculum = lessonSnapshot.docs.map((lessonDoc) => {
+            const lesson = lessonDoc.data()
+            return {
+              id: lessonDoc.id,
+              title: lesson.title,
+              description: lesson.description,
+              duration: lesson.duration,
+              isFree: lesson.isFree === true,
+              videoUrl: lesson.videoUrl,
+            }
           })
         }
-      } catch (err) {
-        console.log('Error fetching course:', err)
-        const fallback = REAL_SAMPLE_COURSES[0]
+
+        if (!active) return
+
+        const tutor =
+          typeof data.tutor === 'string'
+            ? { name: data.tutor }
+            : data.tutor && typeof data.tutor === 'object'
+              ? data.tutor
+              : null
+        const parsedPrice =
+          typeof data.price === 'number'
+            ? data.price
+            : typeof data.price === 'string' && data.price.trim()
+              ? Number(data.price)
+              : NaN
+        const price = Number.isFinite(parsedPrice) ? parsedPrice : null
+        const parsedOriginalPrice =
+          typeof data.originalPrice === 'number'
+            ? data.originalPrice
+            : typeof data.originalPrice === 'string' && data.originalPrice.trim()
+              ? Number(data.originalPrice)
+              : NaN
+
         setCourse({
-          id: courseId,
-          ...fallback,
-          image: fallback.thumbnailUrl,
+          id: docSnap.id,
+          title: data.title || params.title || '',
+          headline: data.headline || data.description || '',
+          subject: data.subject || '',
+          level: data.level || '',
+          rating: Number.isFinite(data.rating) ? data.rating : null,
+          reviewsCount: Number.isFinite(data.reviewsCount) ? data.reviewsCount : null,
+          studentsCount: data.studentsCount ?? null,
+          duration: data.duration || '',
+          videoUrl: data.videoUrl || '',
+          lessonsCount: typeof data.lessonsCount === 'number' ? data.lessonsCount : curriculum.length,
+          price,
+          originalPrice: Number.isFinite(parsedOriginalPrice) ? parsedOriginalPrice : null,
+          image: data.thumbnailUrl || data.image || '',
+          tutor,
+          learningPoints: Array.isArray(data.learningPoints) ? data.learningPoints : [],
+          curriculum,
         })
+      } catch (error) {
+        console.error('Error fetching course details:', error)
+        if (active) {
+          setCourse(null)
+          setLoadError('Unable to load this course right now. Please try again.')
+        }
       } finally {
-        setLoading(false)
+        if (active) setLoading(false)
       }
     }
 
@@ -150,6 +166,10 @@ export default function CourseDetailsScreen() {
 
     fetchCourseDetails()
     checkBookmark()
+
+    return () => {
+      active = false
+    }
   }, [courseId, params.title])
 
   const handleShare = async () => {
@@ -202,7 +222,7 @@ export default function CourseDetailsScreen() {
         setIsBookmarked(true)
         Alert.alert('Saved! 🔖', 'Course added to your Saved list in My Learning tab.')
       }
-    } catch (err) {
+    } catch (_err) {
       setIsBookmarked(!isBookmarked)
     } finally {
       setSavingBookmark(false)
@@ -211,6 +231,11 @@ export default function CourseDetailsScreen() {
 
   const handleEnroll = () => {
     if (!course) return
+    if (typeof course.price !== 'number' || course.price < 0) {
+      Alert.alert('Price unavailable', 'The tutor has not set a price for this course yet.')
+      return
+    }
+
     router.push({
       pathname: '/checkout',
       params: {
@@ -223,7 +248,7 @@ export default function CourseDetailsScreen() {
     })
   }
 
-  if (loading || !course) {
+  if (loading) {
     return (
       <SafeAreaView
         style={[styles.safeArea, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center' }]}
@@ -236,9 +261,35 @@ export default function CourseDetailsScreen() {
     )
   }
 
+  if (!course) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+        <View style={styles.notFoundContainer}>
+          <View style={[styles.notFoundIcon, { backgroundColor: colors.primaryLight }]}>
+            <Ionicons name="book-outline" size={30} color={colors.primary} />
+          </View>
+          <Text style={[styles.notFoundTitle, { color: colors.text }]}>Course unavailable</Text>
+          <Text style={[styles.notFoundMessage, { color: colors.textMuted }]}>
+            {loadError || 'This course could not be found.'}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => router.back()}
+            style={[styles.backToCoursesButton, { backgroundColor: colors.primary }]}
+          >
+            <Text style={styles.enrollButtonText}>Go back</Text>
+          </Pressable>
+        </View>
+      </SafeAreaView>
+    )
+  }
+
+  const canEnroll = typeof course.price === 'number' && course.price >= 0
+
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
-      <StatusBar barStyle="light-content" />
+      <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
 
       {/* Top Floating Nav Bar */}
       <View style={styles.navBar}>
@@ -274,21 +325,29 @@ export default function CourseDetailsScreen() {
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
         {/* Hero Course Image with Preview Tag */}
         <View style={styles.heroWrapper}>
-          <Image source={{ uri: course.image }} style={styles.heroImage} resizeMode="cover" />
-          <Pressable
-            style={styles.playButtonOverlay}
-            onPress={() =>
-              router.push({
-                pathname: '/screens/lesson',
-                params: { lessonId: course.id, title: course.title },
-              })
-            }
-          >
-            <View style={styles.playIconCircle}>
-              <Ionicons name="play" size={28} color="#FFFFFF" style={{ marginLeft: 3 }} />
+          {course.image ? (
+            <Image source={{ uri: course.image }} style={styles.heroImage} resizeMode="cover" />
+          ) : (
+            <View style={[styles.heroImageFallback, { backgroundColor: colors.primaryLight }]}>
+              <Ionicons name="book-outline" size={48} color={colors.primary} />
             </View>
-            <Text style={styles.previewTag}>Watch Free Preview</Text>
-          </Pressable>
+          )}
+          {course.videoUrl && (
+            <Pressable
+              style={styles.playButtonOverlay}
+              onPress={() =>
+                router.push({
+                  pathname: '/screens/lesson',
+                  params: { courseId: course.id, title: course.title, videoUrl: course.videoUrl },
+                })
+              }
+            >
+              <View style={[styles.playIconCircle, { backgroundColor: colors.primary }]}>
+                <Ionicons name="play" size={28} color="#FFFFFF" style={{ marginLeft: 3 }} />
+              </View>
+              <Text style={styles.previewTag}>Open lesson</Text>
+            </Pressable>
+          )}
         </View>
 
         {/* Main Details Body */}
@@ -299,105 +358,132 @@ export default function CourseDetailsScreen() {
           ]}
         >
           <View style={styles.badgeRow}>
-            <View
-              style={[
-                styles.subjectChip,
-                { backgroundColor: isDark ? '#14331C' : '#E8F5E9' },
-              ]}
-            >
-              <Text
+            {!!course.subject && (
+              <View
                 style={[
-                  styles.subjectChipText,
-                  { color: isDark ? '#4ADE80' : '#15803D' },
+                  styles.subjectChip,
+                  { backgroundColor: colors.primaryLight },
                 ]}
               >
-                {course.subject}
-              </Text>
-            </View>
-            <View
-              style={[
-                styles.levelChip,
-                { backgroundColor: isDark ? '#1C2920' : '#F3F4F6' },
-              ]}
-            >
-              <Text
+                <Text
+                  style={[
+                    styles.subjectChipText,
+                    { color: colors.primary },
+                  ]}
+                >
+                  {course.subject}
+                </Text>
+              </View>
+            )}
+            {!!course.level && (
+              <View
                 style={[
-                  styles.levelChipText,
-                  { color: isDark ? colors.textSecondary : '#4B5563' },
+                  styles.levelChip,
+                  { backgroundColor: colors.borderSubtle },
                 ]}
               >
-                {course.level}
-              </Text>
-            </View>
+                <Text
+                  style={[
+                    styles.levelChipText,
+                    { color: colors.textSecondary },
+                  ]}
+                >
+                  {course.level}
+                </Text>
+              </View>
+            )}
           </View>
 
           <Text style={[styles.courseTitle, { color: colors.text }]}>{course.title}</Text>
-          <Text style={[styles.courseHeadline, { color: colors.textSecondary }]}>
-            {course.headline}
-          </Text>
+          {!!course.headline && (
+            <Text style={[styles.courseHeadline, { color: colors.textSecondary }]}>
+              {course.headline}
+            </Text>
+          )}
 
           {/* Social Proof Stats */}
-          <View
-            style={[
-              styles.statsBar,
-              { backgroundColor: isDark ? '#1C2920' : '#F8FAF8', borderColor: colors.border },
-            ]}
-          >
-            <View style={styles.statItem}>
-              <Ionicons name="star" size={16} color="#F5A623" />
-              <Text style={[styles.statBold, { color: colors.text }]}>{course.rating}</Text>
-              <Text style={[styles.statMuted, { color: colors.textMuted }]}>
-                ({course.reviewsCount})
-              </Text>
+          {(course.rating !== null || course.studentsCount !== null || course.duration) && (
+            <View
+              style={[
+                styles.statsBar,
+                { backgroundColor: colors.borderSubtle, borderColor: colors.border },
+              ]}
+            >
+              {course.rating !== null && (
+                <View style={styles.statItem}>
+                  <Ionicons name="star" size={16} color="#F5A623" />
+                  <Text style={[styles.statBold, { color: colors.text }]}>{course.rating}</Text>
+                  {course.reviewsCount !== null && (
+                    <Text style={[styles.statMuted, { color: colors.textMuted }]}>
+                      ({course.reviewsCount})
+                    </Text>
+                  )}
+                </View>
+              )}
+              {course.rating !== null && (course.studentsCount !== null || course.duration) && (
+                <View style={[styles.statSeparator, { backgroundColor: colors.border }]} />
+              )}
+              {course.studentsCount !== null && (
+                <View style={styles.statItem}>
+                  <Ionicons name="people-outline" size={16} color={colors.textMuted} />
+                  <Text style={[styles.statBold, { color: colors.text }]}>
+                    {course.studentsCount}
+                  </Text>
+                  <Text style={[styles.statMuted, { color: colors.textMuted }]}>students</Text>
+                </View>
+              )}
+              {course.studentsCount !== null && course.duration && (
+                <View style={[styles.statSeparator, { backgroundColor: colors.border }]} />
+              )}
+              {!!course.duration && (
+                <View style={styles.statItem}>
+                  <Ionicons name="time-outline" size={16} color={colors.textMuted} />
+                  <Text style={[styles.statBold, { color: colors.text }]}>{course.duration}</Text>
+                </View>
+              )}
             </View>
-            <View style={[styles.statSeparator, { backgroundColor: colors.border }]} />
-            <View style={styles.statItem}>
-              <Ionicons name="people-outline" size={16} color={colors.textMuted} />
-              <Text style={[styles.statBold, { color: colors.text }]}>
-                {course.studentsCount}
-              </Text>
-              <Text style={[styles.statMuted, { color: colors.textMuted }]}>students</Text>
-            </View>
-            <View style={[styles.statSeparator, { backgroundColor: colors.border }]} />
-            <View style={styles.statItem}>
-              <Ionicons name="time-outline" size={16} color={colors.textMuted} />
-              <Text style={[styles.statBold, { color: colors.text }]}>{course.duration}</Text>
-            </View>
-          </View>
+          )}
 
           {/* Instructor Card */}
-          <View
-            style={[
-              styles.instructorBox,
-              { backgroundColor: isDark ? '#1C2920' : '#F9FAFB', borderColor: colors.border },
-            ]}
-          >
-            <Image
-              source={{
-                uri:
-                  course.tutor?.avatar ||
-                  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80',
-              }}
-              style={styles.tutorAvatar}
-            />
-            <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                <Text style={[styles.tutorName, { color: colors.text }]}>
-                  {course.tutor?.name || course.tutor}
-                </Text>
-                <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+          {course.tutor?.name && (
+            <View
+              style={[
+                styles.instructorBox,
+                { backgroundColor: colors.borderSubtle, borderColor: colors.border },
+              ]}
+            >
+              {course.tutor.avatar ? (
+                <Image source={{ uri: course.tutor.avatar }} style={styles.tutorAvatar} />
+              ) : (
+                <View style={[styles.tutorAvatarFallback, { backgroundColor: colors.primaryLight }]}>
+                  <Ionicons name="person-outline" size={20} color={colors.primary} />
+                </View>
+              )}
+              <View style={{ flex: 1 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <Text style={[styles.tutorName, { color: colors.text }]}>
+                    {course.tutor.name}
+                  </Text>
+                  {course.tutor.verified === true && (
+                    <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+                  )}
+                </View>
+                {!!course.tutor.title && (
+                  <Text style={[styles.tutorTitle, { color: colors.textMuted }]} numberOfLines={2}>
+                    {course.tutor.title}
+                  </Text>
+                )}
+                {(course.tutor.rating || course.tutor.students) && (
+                  <Text style={[styles.tutorMeta, { color: colors.primary }]}>
+                    {[
+                      course.tutor.rating && `★ ${course.tutor.rating} rating`,
+                      course.tutor.students && `${course.tutor.students} students`,
+                    ].filter(Boolean).join(' • ')}
+                  </Text>
+                )}
               </View>
-              <Text
-                style={[styles.tutorTitle, { color: colors.textMuted }]}
-                numberOfLines={2}
-              >
-                {course.tutor?.title || 'Senior Academic Educator'}
-              </Text>
-              <Text style={[styles.tutorMeta, { color: colors.primary }]}>
-                ★ {course.tutor?.rating || '4.95'} rating • {course.tutor?.students || '500+'} students
-              </Text>
             </View>
-          </View>
+          )}
 
           {/* Segmented Detail Tabs */}
           <View
@@ -447,7 +533,7 @@ export default function CourseDetailsScreen() {
                   },
                 ]}
               >
-                Curriculum ({course.curriculum?.length || 0})
+                Curriculum ({course.curriculum.length})
               </Text>
             </Pressable>
           </View>
@@ -455,44 +541,32 @@ export default function CourseDetailsScreen() {
           {/* OVERVIEW CONTENT */}
           {activeTab === 'overview' && (
             <View style={styles.tabContentSection}>
-              <Text style={[styles.sectionHeading, { color: colors.text }]}>
-                What You Will Learn
-              </Text>
-              <View style={styles.learningGrid}>
-                {course.learningPoints?.map((point, index) => (
-                  <View key={index} style={styles.learningRow}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={20}
-                      color={colors.primary}
-                      style={{ marginTop: 2 }}
-                    />
-                    <Text style={[styles.learningText, { color: colors.textSecondary }]}>
-                      {point}
-                    </Text>
+              {course.learningPoints.length > 0 ? (
+                <>
+                  <Text style={[styles.sectionHeading, { color: colors.text }]}>
+                    What You Will Learn
+                  </Text>
+                  <View style={styles.learningGrid}>
+                    {course.learningPoints.map((point, index) => (
+                      <View key={index} style={styles.learningRow}>
+                        <Ionicons
+                          name="checkmark-circle"
+                          size={20}
+                          color={colors.primary}
+                          style={{ marginTop: 2 }}
+                        />
+                        <Text style={[styles.learningText, { color: colors.textSecondary }]}>
+                          {point}
+                        </Text>
+                      </View>
+                    ))}
                   </View>
-                ))}
-              </View>
-
-              <Text style={[styles.sectionHeading, { color: colors.text }]}>
-                Course Guarantee
-              </Text>
-              <View
-                style={[
-                  styles.guaranteeBox,
-                  { backgroundColor: isDark ? '#1C2920' : '#F0FDF4', borderColor: colors.border },
-                ]}
-              >
-                <Ionicons name="shield-checkmark" size={24} color={colors.primary} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.guaranteeTitle, { color: colors.text }]}>
-                    Certificate of Completion
-                  </Text>
-                  <Text style={[styles.guaranteeSub, { color: colors.textMuted }]}>
-                    Receive a verifiable digital certificate upon completing all lessons and practice exercises.
-                  </Text>
-                </View>
-              </View>
+                </>
+              ) : (
+                <Text style={[styles.emptyDetailsText, { color: colors.textMuted }]}>
+                  The tutor has not added course outcomes yet.
+                </Text>
+              )}
             </View>
           )}
 
@@ -502,76 +576,82 @@ export default function CourseDetailsScreen() {
               <Text style={[styles.sectionHeading, { color: colors.text }]}>
                 Lesson Modules
               </Text>
-              <View style={styles.curriculumList}>
-                {course.curriculum?.map((mod, index) => (
-                  <Pressable
-                    key={mod.id || index}
-                    style={[
-                      styles.curriculumItem,
-                      {
-                        backgroundColor: isDark ? '#1C2920' : '#FFFFFF',
-                        borderColor: colors.border,
-                      },
-                    ]}
-                    onPress={() => {
-                      if (mod.isFree) {
-                        router.push({
-                          pathname: '/screens/lesson',
-                          params: { lessonId: course.id, title: mod.title },
-                        })
-                      } else {
-                        handleEnroll()
-                      }
-                    }}
-                  >
-                    <View
+              {course.curriculum.length > 0 ? (
+                <View style={styles.curriculumList}>
+                  {course.curriculum.map((mod, index) => (
+                    <Pressable
+                      key={mod.id || index}
                       style={[
-                        styles.moduleNumberBox,
+                        styles.curriculumItem,
                         {
-                          backgroundColor: mod.isFree
-                            ? isDark
-                              ? '#14331C'
-                              : '#DCFCE7'
-                            : isDark
-                            ? '#26332A'
-                            : '#F3F4F6',
+                          backgroundColor: colors.card,
+                          borderColor: colors.border,
                         },
                       ]}
+                      onPress={() => {
+                        if (mod.isFree && (mod.videoUrl || course.videoUrl)) {
+                          router.push({
+                            pathname: '/screens/lesson',
+                            params: {
+                              courseId: course.id,
+                              title: mod.title,
+                              videoUrl: mod.videoUrl || course.videoUrl,
+                            },
+                          })
+                        } else if (canEnroll) {
+                          handleEnroll()
+                        } else {
+                          Alert.alert('Lesson unavailable', 'This course does not have a price or an accessible preview yet.')
+                        }
+                      }}
                     >
-                      <Ionicons
-                        name={mod.isFree ? 'play' : 'lock-closed'}
-                        size={16}
-                        color={mod.isFree ? colors.primary : colors.textMuted}
-                      />
-                    </View>
-                    <View style={{ flex: 1 }}>
-                      <Text style={[styles.moduleTitle, { color: colors.text }]}>
-                        {mod.title}
-                      </Text>
-                      <Text style={[styles.moduleDuration, { color: colors.textMuted }]}>
-                        {mod.duration}
-                      </Text>
-                    </View>
-                    {mod.isFree && (
                       <View
                         style={[
-                          styles.freeBadge,
-                          { backgroundColor: isDark ? '#14331C' : '#E8F5E9' },
+                          styles.moduleNumberBox,
+                          { backgroundColor: mod.isFree ? colors.primaryLight : colors.borderSubtle },
                         ]}
                       >
-                        <Text
+                        <Ionicons
+                          name={mod.isFree ? 'play' : 'lock-closed'}
+                          size={16}
+                          color={mod.isFree ? colors.primary : colors.textMuted}
+                        />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={[styles.moduleTitle, { color: colors.text }]}>
+                          {mod.title}
+                        </Text>
+                        {!!mod.duration && (
+                          <Text style={[styles.moduleDuration, { color: colors.textMuted }]}>
+                            {mod.duration}
+                          </Text>
+                        )}
+                      </View>
+                      {mod.isFree && (
+                        <View
                           style={[
-                            styles.freeBadgeText,
-                            { color: isDark ? '#4ADE80' : '#15803D' },
+                            styles.freeBadge,
+                            { backgroundColor: colors.primaryLight },
                           ]}
                         >
-                          FREE PREVIEW
-                        </Text>
-                      </View>
-                    )}
-                  </Pressable>
-                ))}
-              </View>
+                          <Text
+                            style={[
+                              styles.freeBadgeText,
+                              { color: colors.primary },
+                            ]}
+                          >
+                            FREE PREVIEW
+                          </Text>
+                        </View>
+                      )}
+                    </Pressable>
+                  ))}
+                </View>
+              ) : (
+                <Text style={[styles.emptyDetailsText, { color: colors.textMuted }]}>
+                  No lesson modules have been added to this course yet.
+                </Text>
+              )}
             </View>
           )}
         </View>
@@ -593,22 +673,27 @@ export default function CourseDetailsScreen() {
           </Text>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
             <Text style={[styles.coursePriceBig, { color: colors.text }]}>
-              ₦{course.price?.toLocaleString()}
+              {canEnroll ? `₦${course.price.toLocaleString()}` : 'Unavailable'}
             </Text>
-            {course.originalPrice && (
+            {canEnroll && course.originalPrice && (
               <Text style={[styles.originalPriceCross, { color: colors.textMuted }]}>
-                ₦{course.originalPrice?.toLocaleString()}
+                ₦{course.originalPrice.toLocaleString()}
               </Text>
             )}
           </View>
         </View>
 
         <Pressable
-          style={[styles.enrollButton, { backgroundColor: colors.primary }]}
+          accessibilityState={{ disabled: !canEnroll }}
+          disabled={!canEnroll}
+          style={[
+            styles.enrollButton,
+            { backgroundColor: colors.primary, opacity: canEnroll ? 1 : 0.55 },
+          ]}
           onPress={handleEnroll}
         >
-          <Text style={styles.enrollButtonText}>Enroll Now</Text>
-          <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+          <Text style={styles.enrollButtonText}>{canEnroll ? 'Enroll Now' : 'Unavailable'}</Text>
+          {canEnroll && <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />}
         </Pressable>
       </View>
     </SafeAreaView>
@@ -618,6 +703,30 @@ export default function CourseDetailsScreen() {
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   loadingText: { marginTop: 12, fontSize: 13 },
+  notFoundContainer: {
+    alignItems: 'center',
+    flex: 1,
+    justifyContent: 'center',
+    padding: 28,
+  },
+  notFoundIcon: {
+    alignItems: 'center',
+    borderRadius: 28,
+    height: 56,
+    justifyContent: 'center',
+    marginBottom: 16,
+    width: 56,
+  },
+  notFoundTitle: { fontSize: 20, fontWeight: '800', textAlign: 'center' },
+  notFoundMessage: { fontSize: 14, lineHeight: 20, marginTop: 8, textAlign: 'center' },
+  backToCoursesButton: {
+    alignItems: 'center',
+    borderRadius: 12,
+    justifyContent: 'center',
+    marginTop: 18,
+    minHeight: 44,
+    paddingHorizontal: 24,
+  },
 
   navBar: {
     position: 'absolute',
@@ -654,6 +763,12 @@ const styles = StyleSheet.create({
   heroImage: {
     width: '100%',
     height: '100%',
+  },
+  heroImageFallback: {
+    alignItems: 'center',
+    height: '100%',
+    justifyContent: 'center',
+    width: '100%',
   },
   playButtonOverlay: {
     position: 'absolute',
@@ -767,6 +882,13 @@ const styles = StyleSheet.create({
     borderRadius: 25,
     backgroundColor: '#0F1A13',
   },
+  tutorAvatarFallback: {
+    alignItems: 'center',
+    borderRadius: 25,
+    height: 50,
+    justifyContent: 'center',
+    width: 50,
+  },
   tutorName: {
     fontSize: 15,
     fontWeight: '800',
@@ -815,6 +937,10 @@ const styles = StyleSheet.create({
   },
   learningGrid: {
     gap: 10,
+  },
+  emptyDetailsText: {
+    fontSize: 13,
+    lineHeight: 19,
   },
   learningRow: {
     flexDirection: 'row',

@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
+import { VideoView, useVideoPlayer } from 'expo-video'
 import {
   collection,
   doc,
@@ -29,7 +30,9 @@ import { REAL_SAMPLE_COURSES } from '../../firebase/seedData'
 
 export default function LessonDetailScreen() {
   const router = useRouter()
-  const { lessonId, title } = useLocalSearchParams()
+  const { lessonId, courseId, title, videoUrl } = useLocalSearchParams()
+  const selectedVideoUrl = typeof videoUrl === 'string' ? videoUrl : null
+  const requestedCourseId = lessonId || courseId
   const { colors, isDark } = useTheme()
 
   const [course, setCourse] = useState(null)
@@ -37,13 +40,16 @@ export default function LessonDetailScreen() {
   const [isPlaying, setIsPlaying] = useState(false)
   const [completedModules, setCompletedModules] = useState({})
   const [updatingProgress, setUpdatingProgress] = useState(false)
+  const videoPlayer = useVideoPlayer(selectedVideoUrl || course?.videoUrl || null, (player) => {
+    player.loop = false
+  })
 
   useEffect(() => {
     async function loadLesson() {
       setLoading(true)
       try {
-        if (lessonId) {
-          const docRef = doc(db, 'courses', String(lessonId))
+        if (requestedCourseId) {
+          const docRef = doc(db, 'courses', String(requestedCourseId))
           const docSnap = await getDoc(docRef)
           if (docSnap.exists()) {
             setCourse({ id: docSnap.id, ...docSnap.data() })
@@ -55,11 +61,11 @@ export default function LessonDetailScreen() {
         // Match sample course
         const matched =
           REAL_SAMPLE_COURSES.find(
-            (c) => c.title === title || c.id === lessonId
+            (c) => c.title === title || c.id === requestedCourseId
           ) || REAL_SAMPLE_COURSES[0]
 
         setCourse({
-          id: lessonId || '1',
+          id: requestedCourseId || '1',
           ...matched,
           image: matched.thumbnailUrl,
         })
@@ -75,7 +81,26 @@ export default function LessonDetailScreen() {
       }
     }
     loadLesson()
-  }, [lessonId, title])
+  }, [requestedCourseId, title])
+
+  useEffect(() => {
+    videoPlayer.replace(selectedVideoUrl || course?.videoUrl || null)
+  }, [course?.videoUrl, selectedVideoUrl, videoPlayer])
+
+  const toggleVideoPlayback = () => {
+    if (!course?.videoUrl) {
+      Alert.alert('Video unavailable', 'This lesson does not have an uploaded video yet.')
+      return
+    }
+
+    if (videoPlayer.playing) {
+      videoPlayer.pause()
+      setIsPlaying(false)
+    } else {
+      videoPlayer.play()
+      setIsPlaying(true)
+    }
+  }
 
   const toggleModuleComplete = (modId) => {
     setCompletedModules((prev) => ({
@@ -204,24 +229,29 @@ export default function LessonDetailScreen() {
           ]}
         >
           <View style={styles.thumbnail}>
-            <Image
-              source={{ uri: course.image || course.thumbnailUrl }}
-              style={styles.thumbImage}
-              resizeMode="cover"
-            />
-            <Pressable
-              style={styles.playBadge}
-              onPress={() => setIsPlaying(!isPlaying)}
-            >
-              <Ionicons
-                name={isPlaying ? 'pause' : 'play'}
-                size={26}
-                color="#FFFFFF"
-                style={{ marginLeft: isPlaying ? 0 : 3 }}
+            {isPlaying && course.videoUrl ? (
+              <VideoView
+                player={videoPlayer}
+                style={styles.videoView}
+                contentFit="contain"
+                nativeControls
               />
-            </Pressable>
+            ) : (
+              <>
+                <Image
+                  source={{ uri: course.image || course.thumbnailUrl }}
+                  style={styles.thumbImage}
+                  resizeMode="cover"
+                />
+                <Pressable style={styles.playBadge} onPress={toggleVideoPlayback}>
+                  <Ionicons name="play" size={26} color="#FFFFFF" style={{ marginLeft: 3 }} />
+                </Pressable>
+              </>
+            )}
             <View style={styles.durationTag}>
-              <Text style={styles.duration}>{isPlaying ? 'Playing • HD' : course.duration}</Text>
+              <Text style={styles.duration}>
+                {isPlaying ? 'Playing • HD' : course.duration}
+              </Text>
             </View>
           </View>
 
@@ -423,6 +453,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#0F1A13',
   },
   thumbImage: {
+    width: '100%',
+    height: '100%',
+  },
+  videoView: {
     width: '100%',
     height: '100%',
   },

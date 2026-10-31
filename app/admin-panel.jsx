@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useRouter } from 'expo-router'
+import { onAuthStateChanged } from 'firebase/auth'
 import {
   collection,
   doc,
@@ -23,7 +24,8 @@ import {
   View,
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
-import { db } from '../firebase/config'
+import { auth, db } from '../firebase/config'
+import { verifyAdminAccess } from '../firebase/adminAccess'
 import { useTheme } from '../context/ThemeContext'
 import { clearSeededFirestoreCourses, seedFirestoreDatabase } from '../firebase/seedData'
 
@@ -43,6 +45,8 @@ export default function AdminPanel() {
   const [enrollmentsCount, setEnrollmentsCount] = useState(0)
   const [bookingsCount, setBookingsCount] = useState(0)
   const [loading, setLoading] = useState(true)
+  const [accessState, setAccessState] = useState('checking')
+  const [accessError, setAccessError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const [seeding, setSeeding] = useState(false)
   const [clearing, setClearing] = useState(false)
@@ -81,7 +85,44 @@ export default function AdminPanel() {
   }
 
   useEffect(() => {
-    loadData()
+    let active = true
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
+      if (!active) return
+
+      if (!user) {
+        setAccessState('denied')
+        setAccessError('Sign in with an administrator email configured on the backend to open this panel.')
+        setLoading(false)
+        return
+      }
+
+      setAccessState('checking')
+      try {
+        const { isAdmin } = await verifyAdminAccess(user)
+        if (!active) return
+        if (!isAdmin) {
+          setAccessState('denied')
+          setAccessError('This account is not an administrator. Use a verified email configured in the backend ADMIN_EMAILS setting.')
+          setLoading(false)
+          return
+        }
+
+        setAccessState('allowed')
+        await loadData()
+      } catch (error) {
+        console.error('Unable to verify admin panel access:', error)
+        if (active) {
+          setAccessState('denied')
+          setAccessError(error.message || 'Unable to verify administrator access.')
+          setLoading(false)
+        }
+      }
+    })
+
+    return () => {
+      active = false
+      unsubscribe()
+    }
   }, [])
 
   const onRefresh = () => {
@@ -221,6 +262,35 @@ export default function AdminPanel() {
   const totalApprovedTutors = allUsers.filter(
     (u) => u.role === 'tutor' && u.approved === true
   ).length
+
+  if (accessState !== 'allowed') {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
+        <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
+        <View style={[styles.headerRow, { borderBottomColor: colors.border, backgroundColor: colors.surface }]}>
+          <Pressable
+            onPress={() => router.back()}
+            style={[styles.backButton, { backgroundColor: isDark ? '#1C2920' : '#F5FAF5' }]}
+            hitSlop={10}
+          >
+            <Ionicons name="arrow-back" size={22} color={colors.text} />
+          </Pressable>
+          <View style={styles.titleWrap}>
+            <Text style={[styles.headerTitle, { color: colors.text }]}>Admin Console</Text>
+          </View>
+        </View>
+        <View style={styles.container}>
+          {accessState === 'checking' ? (
+            <ActivityIndicator size="large" color={colors.primary} />
+          ) : (
+            <Text style={[styles.headerSubtitle, { color: colors.textMuted }]}>
+              {accessError}
+            </Text>
+          )}
+        </View>
+      </SafeAreaView>
+    )
+  }
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -443,7 +513,7 @@ export default function AdminPanel() {
                       ]}
                     >
                       <Text style={[styles.bioText, { color: colors.textSecondary }]}>
-                        "{tutor.bio}"
+                        &quot;{tutor.bio}&quot;
                       </Text>
                     </View>
                   )}

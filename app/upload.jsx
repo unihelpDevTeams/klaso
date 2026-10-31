@@ -1,7 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
+import { File } from 'expo-file-system'
 import * as ImagePicker from 'expo-image-picker'
 import { router } from 'expo-router'
-import { addDoc, collection, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { collection, doc, serverTimestamp, writeBatch } from 'firebase/firestore'
 import React, { useState } from 'react'
 import {
   ActivityIndicator,
@@ -34,6 +35,7 @@ export default function UploadScreen() {
   const { colors, isDark } = useTheme()
   const [form, setForm] = useState(defaultForm)
   const [thumbnailUri, setThumbnailUri] = useState('')
+  const [videoAsset, setVideoAsset] = useState(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -60,46 +62,42 @@ export default function UploadScreen() {
     }
   }
 
-  async function uploadToCloudinary() {
-    if (!thumbnailUri) return { url: '', publicId: '', resourceType: 'image' }
-    if (thumbnailUri.startsWith('http://') || thumbnailUri.startsWith('https://')) {
-      return { url: thumbnailUri, publicId: '', resourceType: 'image' }
-    }
-
+  async function pickVideo() {
     try {
-      const localUri = thumbnailUri
-      const filename = localUri.split('/').pop() || `thumbnail-${Date.now()}.jpg`
-      const formData = new FormData()
-      formData.append('file', {
-        uri: localUri,
-        name: filename,
-        type: 'image/jpeg',
-      })
-      formData.append('folder', 'klaso/lessons')
-
-      const response = await fetch(`${API_URL}/api/upload-media`, {
-        method: 'POST',
-        body: formData,
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ['videos'],
+        allowsEditing: false,
+        videoQuality: 1,
       })
 
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data.details || data.error || 'Thumbnail upload failed.')
-      }
-
-      return {
-        url: data.url,
-        publicId: data.publicId,
-        resourceType: data.resourceType,
+      if (!result.canceled && result.assets?.[0]) {
+        setVideoAsset(result.assets[0])
+        setError('')
       }
     } catch {
-      // Fallback to high quality education stock photo if backend upload fails
-      return {
-        url: 'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=800&q=80',
-        publicId: '',
-        resourceType: 'image',
-      }
+      setError('Unable to select a video. Please try again.')
     }
+  }
+
+  async function uploadMedia(uri, folder) {
+    const filename = uri.split('/').pop() || `media-${Date.now()}`
+    const formData = new FormData()
+    formData.append('file', new File(uri), filename)
+    const idToken = await auth.currentUser.getIdToken()
+    const response = await fetch(
+      `${API_URL}/api/upload-media?folder=${encodeURIComponent(folder)}`,
+      {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
+        body: formData,
+      }
+    )
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.error || 'Media upload failed.')
+    }
+
+    return data
   }
 
   async function handleSubmit() {
@@ -113,15 +111,30 @@ export default function UploadScreen() {
       return
     }
 
+    if (!videoAsset?.uri) {
+      setError('Select a tutorial video before publishing.')
+      return
+    }
+
     setLoading(true)
     setError('')
     setSuccess('')
+    const uploadedKeys = []
 
     try {
-      const uploaded = await uploadToCloudinary()
+      const uploadedVideo = await uploadMedia(videoAsset.uri, 'klaso/lessons')
+      uploadedKeys.push(uploadedVideo.key)
+      const uploadedThumbnail = thumbnailUri
+        ? await uploadMedia(thumbnailUri, 'klaso/lessons')
+        : null
+      if (uploadedThumbnail?.key) uploadedKeys.push(uploadedThumbnail.key)
+      const thumbnailUrl = uploadedThumbnail?.url || ''
 
-      // 1. Save to `courses` collection for instant display on homepage feed
-      await addDoc(collection(db, 'courses'), {
+      const batch = writeBatch(db)
+      const courseRef = doc(collection(db, 'courses'))
+      const lessonRef = doc(collection(db, 'lessons'))
+
+      batch.set(courseRef, {
         title: form.title.trim(),
         headline: form.description.trim(),
         subject: form.subject.trim(),
@@ -129,29 +142,23 @@ export default function UploadScreen() {
         duration: form.duration ? `${form.duration}` : '45 mins',
         price: Number(form.price) || 3500,
         originalPrice: (Number(form.price) || 3500) * 1.5,
-        thumbnailUrl:
-          uploaded.url ||
-          'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=800&q=80',
+        thumbnailUrl,
+        thumbnailKey: uploadedThumbnail?.key || '',
+        videoUrl: uploadedVideo.url,
+        videoKey: uploadedVideo.key,
         tutor: {
-          name: auth.currentUser.displayName || 'Certified Tutor',
-          avatar:
-            auth.currentUser.photoURL ||
-            'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=400&q=80',
+          name: auth.currentUser.displayName || '',
+          ...(auth.currentUser.photoURL ? { avatar: auth.currentUser.photoURL } : {}),
           title: `${form.subject.trim()} Instructor`,
-          rating: 5.0,
-          students: '1+',
         },
-        rating: 5.0,
-        reviewsCount: 1,
-        studentsCount: '1',
         status: 'published',
         createdBy: auth.currentUser.uid,
+        lessonId: lessonRef.id,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
 
-      // 2. Also record in `lessons` collection for tutor studio management
-      await addDoc(collection(db, 'lessons'), {
+      batch.set(lessonRef, {
         title: form.title.trim(),
         description: form.description.trim(),
         hashtags: form.hashtags
@@ -163,19 +170,46 @@ export default function UploadScreen() {
         level: form.level,
         duration: form.duration,
         price: form.price,
-        thumbnailUrl: uploaded.url || '',
-        publicId: uploaded.publicId || '',
+        thumbnailUrl: uploadedThumbnail?.url || '',
+        thumbnailKey: uploadedThumbnail?.key || '',
+        videoUrl: uploadedVideo.url,
+        videoKey: uploadedVideo.key,
+        courseId: courseRef.id,
         createdBy: auth.currentUser.uid,
         createdAt: serverTimestamp(),
       })
+      await batch.commit()
 
       setSuccess('Course lesson uploaded successfully! It is now live.')
       setForm(defaultForm)
       setThumbnailUri('')
+      setVideoAsset(null)
       setTimeout(() => router.back(), 900)
     } catch (uploadError) {
       console.log('Upload lesson error:', uploadError)
       setError(uploadError.message || 'Unable to upload lesson right now.')
+      try {
+        const idToken = await auth.currentUser?.getIdToken()
+        if (idToken) {
+          await Promise.all(
+            uploadedKeys.map(async (key) => {
+              const response = await fetch(`${API_URL}/api/delete-media`, {
+                method: 'DELETE',
+                headers: {
+                  Authorization: `Bearer ${idToken}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ key }),
+              })
+              if (!response.ok) {
+                console.error('Unable to remove failed lesson upload:', await response.text())
+              }
+            })
+          )
+        }
+      } catch (cleanupError) {
+        console.error('Unable to clean up failed lesson uploads:', cleanupError)
+      }
     } finally {
       setLoading(false)
     }
@@ -234,6 +268,30 @@ export default function UploadScreen() {
               </Text>
             </View>
           )}
+        </Pressable>
+
+        <Pressable
+          style={[
+            styles.videoPicker,
+            { backgroundColor: colors.card, borderColor: colors.border },
+          ]}
+          onPress={pickVideo}
+          disabled={loading}
+        >
+          <Ionicons
+            name={videoAsset ? 'videocam' : 'videocam-outline'}
+            size={22}
+            color={colors.primary}
+          />
+          <View style={styles.videoPickerText}>
+            <Text style={[styles.label, { color: colors.text }]}>
+              {videoAsset?.fileName || 'Select Tutorial Video'}
+            </Text>
+            <Text style={[styles.placeholderSub, { color: colors.textMuted }]}>
+              MP4, MOV, or WebM, up to 500 MB
+            </Text>
+          </View>
+          <Ionicons name="folder-open-outline" size={20} color={colors.textMuted} />
         </Pressable>
 
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
@@ -433,6 +491,20 @@ const styles = StyleSheet.create({
     height: 180,
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+  videoPicker: {
+    alignItems: 'center',
+    borderRadius: 14,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 12,
+    minHeight: 68,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  videoPickerText: {
+    flex: 1,
+    gap: 4,
   },
   thumbnailPreview: {
     height: '100%',

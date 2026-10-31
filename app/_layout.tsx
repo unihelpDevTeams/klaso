@@ -1,9 +1,14 @@
 import { Stack, useRouter, useSegments } from 'expo-router'
+import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
 import { onAuthStateChanged } from 'firebase/auth'
 import React, { useEffect, useState } from 'react'
 import { auth } from '../firebase/config'
 import { ThemeProvider, useTheme } from '../context/ThemeContext'
+
+SplashScreen.preventAutoHideAsync().catch((error) => {
+  console.error('Unable to keep the native splash screen visible:', error)
+})
 
 function RootNavigator() {
   const segments = useSegments()
@@ -26,6 +31,14 @@ function RootNavigator() {
 
     return unsubscribe
   }, [router, segments])
+
+  useEffect(() => {
+    if (!ready) return
+
+    SplashScreen.hideAsync().catch((error) => {
+      console.error('Unable to hide the native splash screen:', error)
+    })
+  }, [ready])
 
   if (!ready) return null
 

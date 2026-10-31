@@ -1,10 +1,57 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { Tabs } from 'expo-router'
-import React from 'react'
+import { onIdTokenChanged } from 'firebase/auth'
+import { doc, onSnapshot } from 'firebase/firestore'
+import React, { useEffect, useState } from 'react'
 import { useTheme } from '../../context/ThemeContext'
+import { verifyAdminAccess } from '../../firebase/adminAccess'
+import { auth, db } from '../../firebase/config'
 
 export default function TabLayout() {
   const { colors, isDark } = useTheme()
+  const [canCreateLessons, setCanCreateLessons] = useState(false)
+
+  useEffect(() => {
+    let unsubscribeProfile = () => {}
+    let authChangeId = 0
+
+    const unsubscribeAuth = onIdTokenChanged(auth, (user) => {
+      const currentChangeId = ++authChangeId
+      unsubscribeProfile()
+      setCanCreateLessons(false)
+
+      if (!user) return
+
+      verifyAdminAccess(user)
+        .then(({ isAdmin }) => {
+          if (currentChangeId === authChangeId) {
+            setCanCreateLessons(isAdmin)
+          }
+        })
+        .catch((error) => {
+          console.error('Unable to verify admin access:', error)
+        })
+
+      unsubscribeProfile = onSnapshot(
+        doc(db, 'users', user.uid),
+        (snapshot) => {
+          const userProfile = snapshot.data()
+          const isApprovedTutor =
+            userProfile?.role === 'tutor' && userProfile?.approved === true
+          setCanCreateLessons((isAdmin) => isAdmin || isApprovedTutor)
+        },
+        (error) => {
+          console.error('Unable to verify creator access:', error)
+          setCanCreateLessons(false)
+        }
+      )
+    })
+
+    return () => {
+      unsubscribeAuth()
+      unsubscribeProfile()
+    }
+  }, [])
 
   return (
     <Tabs
@@ -62,8 +109,19 @@ export default function TabLayout() {
         name="upload"
         options={{
           title: 'Creator',
+          href: canCreateLessons ? undefined : null,
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'add-circle' : 'add-circle-outline'} size={size + 2} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="search"
+        options={{
+          title: 'Search',
+          href: canCreateLessons ? null : undefined,
+          tabBarIcon: ({ color, size, focused }) => (
+            <Ionicons name={focused ? 'search' : 'search-outline'} size={size} color={color} />
           ),
         }}
       />

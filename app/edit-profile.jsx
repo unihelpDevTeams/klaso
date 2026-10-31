@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
+import { File } from 'expo-file-system'
 import * as ImagePicker from 'expo-image-picker'
 import { useRouter } from 'expo-router'
 import { updateProfile } from 'firebase/auth'
@@ -25,7 +26,11 @@ export default function EditProfileScreen() {
   const router = useRouter()
   const { colors, isDark } = useTheme()
   const [loading, setLoading] = useState(false)
-  const [profile, setProfile] = useState({ displayName: '', bio: '', avatarUrl: '' })
+  const [profile, setProfile] = useState(() => ({
+    displayName: auth.currentUser?.displayName || '',
+    bio: '',
+    avatarUrl: auth.currentUser?.photoURL || '',
+  }))
   const [avatarUri, setAvatarUri] = useState('')
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -33,12 +38,6 @@ export default function EditProfileScreen() {
   useEffect(() => {
     const currentUser = auth.currentUser
     if (!currentUser) return
-
-    setProfile((prev) => ({
-      ...prev,
-      displayName: currentUser.displayName || '',
-      avatarUrl: currentUser.photoURL || '',
-    }))
 
     // Fetch existing bio from Firestore
     async function loadUserDoc() {
@@ -92,38 +91,29 @@ export default function EditProfileScreen() {
       return { url: avatarUri, publicId: '', resourceType: 'image' }
     }
 
-    try {
-      const filename = avatarUri.split('/').pop() || `avatar-${Date.now()}.jpg`
-      const formData = new FormData()
-      formData.append('file', {
-        uri: avatarUri,
-        name: filename,
-        type: 'image/jpeg',
-      })
-      formData.append('folder', 'klaso/profiles')
+    const filename = avatarUri.split('/').pop() || `avatar-${Date.now()}.jpg`
+    const formData = new FormData()
+    formData.append('file', new File(avatarUri), filename)
+    const idToken = await auth.currentUser.getIdToken()
 
-      const response = await fetch(`${API_URL}/api/upload-media`, {
+    const response = await fetch(
+      `${API_URL}/api/upload-media?folder=klaso%2Fprofiles`,
+      {
         method: 'POST',
+        headers: { Authorization: `Bearer ${idToken}` },
         body: formData,
-      })
+      }
+    )
 
-      const data = await response.json()
-      if (!response.ok) {
-        throw new Error(data.details || data.error || 'Avatar upload failed.')
-      }
+    const data = await response.json()
+    if (!response.ok) {
+      throw new Error(data.error || 'Avatar upload failed.')
+    }
 
-      return {
-        url: data.url,
-        publicId: data.publicId,
-        resourceType: data.resourceType,
-      }
-    } catch {
-      // Fallback: keep local or existing avatar if upload endpoint is unavailable
-      return {
-        url: avatarUri,
-        publicId: '',
-        resourceType: 'image',
-      }
+    return {
+      url: data.url,
+      publicId: data.key,
+      resourceType: data.resourceType,
     }
   }
 

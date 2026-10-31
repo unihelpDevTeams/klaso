@@ -1,11 +1,12 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useRouter } from 'expo-router'
-import { onAuthStateChanged } from 'firebase/auth'
+import { onIdTokenChanged } from 'firebase/auth'
 import { doc, onSnapshot } from 'firebase/firestore'
 import React, { useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../../firebase/config'
+import { verifyAdminAccess } from '../../firebase/adminAccess'
 import { useTheme } from '../../context/ThemeContext'
 import Header from '../components/header'
 import UploadScreen from '../upload'
@@ -15,41 +16,57 @@ export default function TabUploadScreen() {
   const { colors, isDark } = useTheme()
   const [userProfile, setUserProfile] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [isConfiguredAdmin, setIsConfiguredAdmin] = useState(false)
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    let unsubscribeProfile = () => {}
+    let authChangeId = 0
+
+    const unsubscribe = onIdTokenChanged(auth, (user) => {
+      const currentChangeId = ++authChangeId
+      unsubscribeProfile()
+      setIsConfiguredAdmin(false)
+
       if (!user) {
         setUserProfile(null)
         setLoading(false)
         return
       }
 
+      verifyAdminAccess(user)
+        .then(({ isAdmin }) => {
+          if (currentChangeId === authChangeId) {
+            setIsConfiguredAdmin(isAdmin)
+          }
+        })
+        .catch((error) => {
+          console.error('Unable to verify admin access:', error)
+        })
+
       const userRef = doc(db, 'users', user.uid)
-      const unsubProfile = onSnapshot(
+      unsubscribeProfile = onSnapshot(
         userRef,
         (snap) => {
           setUserProfile(snap.data() || null)
           setLoading(false)
         },
-        () => {
+        (error) => {
+          console.error('Unable to verify creator access:', error)
           setUserProfile(null)
           setLoading(false)
         }
       )
-
-      return unsubProfile
     })
 
-    return unsubscribe
+    return () => {
+      unsubscribe()
+      unsubscribeProfile()
+    }
   }, [])
 
-  const isAdmin =
-    userProfile?.role === 'admin' ||
-    userProfile?.admin === true ||
-    auth.currentUser?.email?.toLowerCase().includes('admin')
-
-  const isTutor = userProfile?.role === 'tutor'
-  const isApproved = userProfile?.approved === true || isAdmin
+  const isAdmin = isConfiguredAdmin
+  const isApprovedTutor =
+    userProfile?.role === 'tutor' && userProfile?.approved === true
 
   if (loading) {
     return (
@@ -62,7 +79,7 @@ export default function TabUploadScreen() {
   }
 
   // If approved tutor or admin, show full upload studio
-  if (isTutor || isAdmin) {
+  if (isApprovedTutor || isAdmin) {
     return <UploadScreen />
   }
 

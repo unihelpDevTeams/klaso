@@ -1,8 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useRouter } from 'expo-router'
-import { onAuthStateChanged, signOut } from 'firebase/auth'
-import { collection, doc, onSnapshot, query, updateDoc, where } from 'firebase/firestore'
-import React, { useEffect, useRef, useState } from 'react'
+import { onIdTokenChanged, reload, sendEmailVerification, signOut } from 'firebase/auth'
+import { collection, doc, onSnapshot, query, where } from 'firebase/firestore'
+import React, { useEffect, useState } from 'react'
 import {
   Alert,
   Image,
@@ -15,6 +15,7 @@ import {
 } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../../firebase/config'
+import { verifyAdminAccess } from '../../firebase/adminAccess'
 import { useTheme } from '../../context/ThemeContext'
 import Header from '../components/header'
 
@@ -23,23 +24,55 @@ export default function Profile() {
   const { colors, isDark, themePreference, setThemePreference } = useTheme()
   const [userProfile, setUserProfile] = useState(null)
   const [enrollmentCount, setEnrollmentCount] = useState(0)
-  const [secretAdminUnlocked, setSecretAdminUnlocked] = useState(false)
+  const [isConfiguredAdmin, setIsConfiguredAdmin] = useState(false)
+  const [adminEmailVerificationRequired, setAdminEmailVerificationRequired] = useState(false)
+  const [adminVerificationMessage, setAdminVerificationMessage] = useState('')
+  const [refreshingAdminAccess, setRefreshingAdminAccess] = useState(false)
+  const [resendingAdminVerification, setResendingAdminVerification] = useState(false)
   const [simulatedRole, setSimulatedRole] = useState(null) // Allows admin to test other roles
 
-  const adminTapCountRef = useRef(0)
-  const adminTapTimerRef = useRef(null)
-
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+    let unsubscribeProfile = () => {}
+    let unsubscribeEnrollments = () => {}
+    let authChangeId = 0
+
+    const unsubscribeAuth = onIdTokenChanged(auth, (user) => {
+      const currentChangeId = ++authChangeId
+      unsubscribeProfile()
+      unsubscribeEnrollments()
+      setIsConfiguredAdmin(false)
+      setAdminEmailVerificationRequired(false)
+      setAdminVerificationMessage('')
+
       if (!user) {
         setUserProfile(null)
         setEnrollmentCount(0)
+        setIsConfiguredAdmin(false)
+        setAdminEmailVerificationRequired(false)
+        setAdminVerificationMessage('')
         return
       }
 
+      verifyAdminAccess(user)
+        .then(({ isAdmin, emailVerificationRequired }) => {
+          if (currentChangeId === authChangeId) {
+            setIsConfiguredAdmin(isAdmin)
+            setAdminEmailVerificationRequired(emailVerificationRequired)
+            setAdminVerificationMessage('')
+          }
+        })
+        .catch((error) => {
+          console.error('Unable to verify admin access:', error)
+          if (currentChangeId === authChangeId) {
+            setIsConfiguredAdmin(false)
+            setAdminEmailVerificationRequired(false)
+            setAdminVerificationMessage(error.message || 'Unable to verify admin access.')
+          }
+        })
+
       // Listen to profile
       const userRef = doc(db, 'users', user.uid)
-      const unsubscribeProfile = onSnapshot(userRef, (snapshot) => {
+      unsubscribeProfile = onSnapshot(userRef, (snapshot) => {
         setUserProfile(snapshot.data() || null)
       })
 
@@ -48,55 +81,64 @@ export default function Profile() {
         collection(db, 'enrollments'),
         where('userId', '==', user.uid)
       )
-      const unsubscribeEnrollments = onSnapshot(qEnrollments, (snapshot) => {
+      unsubscribeEnrollments = onSnapshot(qEnrollments, (snapshot) => {
         setEnrollmentCount(snapshot.size)
       })
-
-      return () => {
-        unsubscribeProfile()
-        unsubscribeEnrollments()
-      }
     })
 
     return () => {
-      if (adminTapTimerRef.current) clearTimeout(adminTapTimerRef.current)
       unsubscribeAuth()
+      unsubscribeProfile()
+      unsubscribeEnrollments()
     }
   }, [])
 
   const currentRole =
     simulatedRole ||
-    userProfile?.role ||
-    (auth.currentUser?.email?.toLowerCase().includes('admin') ? 'admin' : 'student')
-
-  const isRealAdmin =
-    userProfile?.role === 'admin' ||
-    userProfile?.admin === true ||
-    auth.currentUser?.email?.toLowerCase().includes('admin') ||
-    secretAdminUnlocked
+    (isConfiguredAdmin ? 'admin' : userProfile?.role === 'tutor' ? 'tutor' : 'student')
+  const isRealAdmin = isConfiguredAdmin
 
   const isTutor = currentRole === 'tutor'
   const isApproved = userProfile?.approved === true || isRealAdmin
+  const canCreateLessons =
+    isRealAdmin || (userProfile?.role === 'tutor' && userProfile?.approved === true)
 
-  // Secret 3-tap gesture on avatar like in Unihelp
-  const handleAvatarTap = () => {
-    adminTapCountRef.current += 1
-    if (adminTapTimerRef.current) clearTimeout(adminTapTimerRef.current)
+  const refreshAdminAccess = async () => {
+    const user = auth.currentUser
+    if (!user || refreshingAdminAccess) return
 
-    if (adminTapCountRef.current >= 3) {
-      adminTapCountRef.current = 0
-      const nextState = !secretAdminUnlocked
-      setSecretAdminUnlocked(nextState)
-      Alert.alert(
-        nextState ? 'Admin Mode Unlocked! 🛡️' : 'Admin Mode Deactivated',
-        nextState
-          ? 'You now have full administrative privileges to review tutors, manage content, and access the admin console from both student and tutor accounts.'
-          : 'Reverted back to normal account permissions.'
-      )
-    } else {
-      adminTapTimerRef.current = setTimeout(() => {
-        adminTapCountRef.current = 0
-      }, 1200)
+    setRefreshingAdminAccess(true)
+    setAdminVerificationMessage('')
+    try {
+      await reload(user)
+      const { isAdmin, emailVerificationRequired } = await verifyAdminAccess(user)
+      setIsConfiguredAdmin(isAdmin)
+      setAdminEmailVerificationRequired(emailVerificationRequired)
+      if (!isAdmin && !emailVerificationRequired) {
+        setAdminVerificationMessage('This account is not listed as an admin in the backend ADMIN_EMAILS setting.')
+      }
+    } catch (error) {
+      console.error('Unable to refresh admin access:', error)
+      setAdminVerificationMessage(error.message || 'Unable to refresh admin access.')
+    } finally {
+      setRefreshingAdminAccess(false)
+    }
+  }
+
+  const resendAdminVerification = async () => {
+    const user = auth.currentUser
+    if (!user || resendingAdminVerification) return
+
+    setResendingAdminVerification(true)
+    setAdminVerificationMessage('')
+    try {
+      await sendEmailVerification(user)
+      setAdminVerificationMessage('Verification email sent. Check your inbox and spam folder.')
+    } catch (error) {
+      console.error('Unable to resend admin email verification:', error)
+      setAdminVerificationMessage(error.message || 'Unable to send the verification email.')
+    } finally {
+      setResendingAdminVerification(false)
     }
   }
 
@@ -134,10 +176,8 @@ export default function Profile() {
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
-          <Pressable
+          <View
             style={[styles.avatarWrap, { backgroundColor: colors.primary }]}
-            onPress={handleAvatarTap}
-            accessibilityLabel="Triple tap to unlock admin"
           >
             {userProfile?.photoURL ? (
               <Image source={{ uri: userProfile.photoURL }} style={styles.avatarImg} />
@@ -163,7 +203,7 @@ export default function Profile() {
                 color="#FFFFFF"
               />
             </View>
-          </Pressable>
+          </View>
 
           <View style={styles.userInfo}>
             <View style={styles.nameRow}>
@@ -235,6 +275,87 @@ export default function Profile() {
               <Text style={[styles.noticeSub, { color: isDark ? '#FCD34D' : '#B45309' }]}>
                 Your tutor registration is currently being verified by the admin team. Once approved, your profile will be featured in the tutor marketplace!
               </Text>
+            </View>
+          </View>
+        )}
+
+        {adminEmailVerificationRequired && !isRealAdmin && (
+          <View
+            style={[
+              styles.noticeCard,
+              {
+                backgroundColor: isDark ? '#2E2208' : '#FFFBEB',
+                borderColor: isDark ? '#6B4C0A' : '#FDE68A',
+              },
+            ]}
+          >
+            <Ionicons name="mail-unread-outline" size={20} color="#D97706" />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.noticeTitle, { color: isDark ? '#FBBF24' : '#92400E' }]}>
+                Verify your admin email
+              </Text>
+              <Text style={[styles.noticeSub, { color: isDark ? '#FCD34D' : '#B45309' }]}>
+                This email is configured for admin access, but Firebase says it is not verified yet. Verify the link sent to your inbox, then refresh access here.
+              </Text>
+              {!!adminVerificationMessage && (
+                <Text style={[styles.noticeSub, { color: isDark ? '#FCD34D' : '#B45309', marginTop: 8 }]}>
+                  {adminVerificationMessage}
+                </Text>
+              )}
+              <View style={styles.adminVerificationActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={resendingAdminVerification}
+                  onPress={resendAdminVerification}
+                  style={[styles.adminVerificationButton, { borderColor: isDark ? '#6B4C0A' : '#FDE68A' }]}
+                >
+                  <Text style={[styles.adminVerificationButtonText, { color: isDark ? '#FCD34D' : '#92400E' }]}>
+                    {resendingAdminVerification ? 'Sending...' : 'Resend email'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  disabled={refreshingAdminAccess}
+                  onPress={refreshAdminAccess}
+                  style={[styles.adminVerificationButton, styles.adminVerificationButtonPrimary]}
+                >
+                  <Text style={styles.adminVerificationButtonPrimaryText}>
+                    {refreshingAdminAccess ? 'Checking...' : "I've verified"}
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {!!adminVerificationMessage && !adminEmailVerificationRequired && !isRealAdmin && (
+          <View
+            style={[
+              styles.noticeCard,
+              {
+                backgroundColor: isDark ? '#2B1D1D' : '#FEF2F2',
+                borderColor: isDark ? '#7F1D1D' : '#FECACA',
+              },
+            ]}
+          >
+            <Ionicons name="alert-circle-outline" size={20} color="#DC2626" />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.noticeTitle, { color: isDark ? '#FCA5A5' : '#991B1B' }]}>
+                Admin access check
+              </Text>
+              <Text style={[styles.noticeSub, { color: isDark ? '#FECACA' : '#B91C1C' }]}>
+                {adminVerificationMessage}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                disabled={refreshingAdminAccess}
+                onPress={refreshAdminAccess}
+                style={[styles.adminVerificationButton, styles.adminVerificationButtonPrimary, { alignSelf: 'flex-start', marginTop: 10 }]}
+              >
+                <Text style={styles.adminVerificationButtonPrimaryText}>
+                  {refreshingAdminAccess ? 'Checking...' : 'Retry access check'}
+                </Text>
+              </Pressable>
             </View>
           </View>
         )}
@@ -442,7 +563,7 @@ export default function Profile() {
           </View>
         </View>
 
-        {/* ADMIN MANAGEMENT CONSOLE (Accessible from both accounts!) */}
+        {/* Only the backend-verified admin allowlist can see this route. */}
         {isRealAdmin && (
           <View
             style={[
@@ -456,7 +577,7 @@ export default function Profile() {
             <View style={styles.adminSectionHeader}>
               <Ionicons name="shield-checkmark" size={18} color="#A78BFA" />
               <Text style={[styles.adminSectionTitle, { color: isDark ? '#C4B5FD' : '#6B21A8' }]}>
-                Admin Controls (Active on both accounts)
+                Admin Controls
               </Text>
             </View>
 
@@ -468,7 +589,7 @@ export default function Profile() {
               <View style={styles.adminBtnLeft}>
                 <Ionicons name="settings-outline" size={20} color="#FFFFFF" />
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.adminBtnTitle}>Open Admin Console</Text>
+                  <Text style={styles.adminBtnTitle}>Open Admin Panel</Text>
                   <Text style={styles.adminBtnSub}>
                     Review tutor applications, seed courses & view metrics
                   </Text>
@@ -556,7 +677,7 @@ export default function Profile() {
             <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
           </Pressable>
 
-          {isTutor && isApproved && (
+          {canCreateLessons && (
             <Pressable
               style={[styles.menuRow, { borderBottomColor: colors.borderSubtle }]}
               onPress={() => router.push('/upload')}
@@ -786,6 +907,31 @@ const styles = StyleSheet.create({
   },
   noticeTitle: { fontSize: 13, fontWeight: '800' },
   noticeSub: { fontSize: 12, lineHeight: 18, marginTop: 2 },
+  adminVerificationActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginTop: 10,
+  },
+  adminVerificationButton: {
+    alignItems: 'center',
+    borderRadius: 8,
+    borderWidth: 1,
+    justifyContent: 'center',
+    minHeight: 34,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  adminVerificationButtonText: { fontSize: 11, fontWeight: '700' },
+  adminVerificationButtonPrimary: {
+    backgroundColor: '#7C3AED',
+    borderColor: '#7C3AED',
+  },
+  adminVerificationButtonPrimaryText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
 
   statsRow: {
     flexDirection: 'row',
