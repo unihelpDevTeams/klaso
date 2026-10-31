@@ -5,12 +5,12 @@ import React, { useState } from 'react'
 import {
   ActivityIndicator,
   Pressable,
-  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native'
+import { SafeAreaView } from 'react-native-safe-area-context'
 import Header from '../components/header'
 import { auth } from '../../firebase/config'
 
