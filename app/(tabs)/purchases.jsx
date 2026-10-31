@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useRouter } from 'expo-router'
+import { onAuthStateChanged } from 'firebase/auth'
 import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import React, { useEffect, useState } from 'react'
 import {
@@ -40,75 +41,70 @@ export default function PurchasesScreen() {
   const [selectedReceipt, setSelectedReceipt] = useState(null)
 
   useEffect(() => {
-    const user = auth.currentUser
-    if (!user) {
-      setEnrolledCourses([])
-      setSavedCourses([])
-      setPurchaseHistory([])
-      setLoading(false)
-      return
-    }
+    let unsubEnrollments = () => {}
+    let unsubSaved = () => {}
+    let unsubTransactions = () => {}
 
-    setLoading(true)
+    const unsubscribeAuth = onAuthStateChanged(auth, (user) => {
+      unsubEnrollments()
+      unsubSaved()
+      unsubTransactions()
 
-    // Listen to Enrollments
-    const qEnrollments = query(
-      collection(db, 'enrollments'),
-      where('userId', '==', user.uid)
-    )
-    const unsubEnrollments = onSnapshot(
-      qEnrollments,
-      (snapshot) => {
-        const list = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-        }))
-        setEnrolledCourses(list)
+      if (!user) {
+        setEnrolledCourses([])
+        setSavedCourses([])
+        setPurchaseHistory([])
         setLoading(false)
-      },
-      () => setLoading(false)
-    )
+        return
+      }
 
-    // Listen to Saved Courses
-    const qSaved = query(
-      collection(db, 'saved_courses'),
-      where('userId', '==', user.uid)
-    )
-    const unsubSaved = onSnapshot(
-      qSaved,
-      (snapshot) => {
-        const list = snapshot.docs.map((docSnap) => ({
+      setLoading(true)
+      const qEnrollments = query(
+        collection(db, 'enrollments'),
+        where('userId', '==', user.uid)
+      )
+      unsubEnrollments = onSnapshot(
+        qEnrollments,
+        (snapshot) => {
+          setEnrolledCourses(snapshot.docs.map((docSnap) => ({
+            id: docSnap.id,
+            ...docSnap.data(),
+          })))
+          setLoading(false)
+        },
+        () => setLoading(false)
+      )
+
+      const qSaved = query(
+        collection(db, 'saved_courses'),
+        where('userId', '==', user.uid)
+      )
+      unsubSaved = onSnapshot(qSaved, (snapshot) => {
+        setSavedCourses(snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...docSnap.data(),
-        }))
-        setSavedCourses(list)
-      },
-      () => {}
-    )
+        })))
+      })
 
-    // Listen to Transactions
-    const qTransactions = query(
-      collection(db, 'transactions'),
-      where('userId', '==', user.uid)
-    )
-    const unsubTransactions = onSnapshot(
-      qTransactions,
-      (snapshot) => {
-        const list = snapshot.docs.map((docSnap) => ({
+      const qTransactions = query(
+        collection(db, 'transactions'),
+        where('userId', '==', user.uid)
+      )
+      unsubTransactions = onSnapshot(qTransactions, (snapshot) => {
+        setPurchaseHistory(snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
           ...docSnap.data(),
-        }))
-        setPurchaseHistory(list)
-      },
-      () => {}
-    )
+        })))
+      })
+    })
 
     return () => {
+      unsubscribeAuth()
       unsubEnrollments()
       unsubSaved()
       unsubTransactions()
     }
-  }, [auth.currentUser])
+  }, [])
 
   const onRefresh = async () => {
     setRefreshing(true)
@@ -128,15 +124,13 @@ export default function PurchasesScreen() {
         })
       }
     >
-      <Image
-        source={{
-          uri:
-            item.image ||
-            item.thumbnailUrl ||
-            'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?auto=format&fit=crop&w=600&q=80',
-        }}
-        style={styles.courseThumb}
-      />
+      {item.image || item.thumbnailUrl ? (
+        <Image source={{ uri: item.image || item.thumbnailUrl }} style={styles.courseThumb} />
+      ) : (
+        <View style={[styles.courseThumb, styles.courseThumbFallback, { backgroundColor: colors.primaryLight }]}>
+          <Ionicons name="book-outline" size={28} color={colors.primary} />
+        </View>
+      )}
       <View style={styles.courseContent}>
         <View style={styles.courseTopRow}>
           <Text
@@ -148,7 +142,7 @@ export default function PurchasesScreen() {
               },
             ]}
           >
-            {item.subject || 'General'}
+            {item.subject || ''}
           </Text>
           <Text style={[styles.timeAgo, { color: colors.textMuted }]}>
             {item.lastAccessed || 'Enrolled'}
@@ -159,16 +153,18 @@ export default function PurchasesScreen() {
           {item.title}
         </Text>
         <Text style={[styles.tutorName, { color: colors.textMuted }]}>
-          {item.tutor?.name || item.tutor || 'Verified Instructor'}
+          {item.tutor?.name || item.tutor || ''}
         </Text>
 
         <View style={styles.progressSection}>
           <View style={styles.progressRow}>
             <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-              Lesson {item.completedLessons || 1} of {item.totalLessons || 12}
+              {item.totalLessons != null
+                ? `Lesson ${item.completedLessons || 0} of ${item.totalLessons}`
+                : `${item.completedLessons || 0} lessons completed`}
             </Text>
             <Text style={[styles.percentText, { color: colors.primary }]}>
-              {Math.round((item.progress || 0.35) * 100)}%
+              {Math.round((item.progress || 0) * 100)}%
             </Text>
           </View>
           <View
@@ -181,7 +177,7 @@ export default function PurchasesScreen() {
               style={[
                 styles.progressBarFill,
                 {
-                  width: `${Math.round((item.progress || 0.35) * 100)}%`,
+                  width: `${Math.round((item.progress || 0) * 100)}%`,
                   backgroundColor: colors.primary,
                 },
               ]}
@@ -199,7 +195,7 @@ export default function PurchasesScreen() {
             style={[styles.nextLessonText, { color: colors.textSecondary }]}
             numberOfLines={1}
           >
-            Next: {item.nextLesson || 'Resume from last checkpoint'}
+            {item.nextLesson ? `Next: ${item.nextLesson}` : 'Resume course'}
           </Text>
           <View style={[styles.resumeBtn, { backgroundColor: colors.primary }]}>
             <Ionicons name="play" size={14} color="#FFFFFF" />
@@ -223,15 +219,13 @@ export default function PurchasesScreen() {
         })
       }
     >
-      <Image
-        source={{
-          uri:
-            item.image ||
-            item.thumbnailUrl ||
-            'https://images.unsplash.com/photo-1455390582262-044cdead277a?auto=format&fit=crop&w=600&q=80',
-        }}
-        style={styles.courseThumb}
-      />
+      {item.image || item.thumbnailUrl ? (
+        <Image source={{ uri: item.image || item.thumbnailUrl }} style={styles.courseThumb} />
+      ) : (
+        <View style={[styles.courseThumb, styles.courseThumbFallback, { backgroundColor: colors.primaryLight }]}>
+          <Ionicons name="book-outline" size={28} color={colors.primary} />
+        </View>
+      )}
       <View style={styles.courseContent}>
         <View style={styles.courseTopRow}>
           <Text
@@ -243,21 +237,21 @@ export default function PurchasesScreen() {
               },
             ]}
           >
-            {item.subject || 'Saved'}
+            {item.subject || ''}
           </Text>
-          <View style={styles.savedRating}>
-            <Ionicons name="star" size={12} color="#F59E0B" />
-            <Text style={[styles.ratingVal, { color: colors.text }]}>
-              {item.rating || '4.9'}
-            </Text>
-          </View>
+          {item.rating != null ? (
+            <View style={styles.savedRating}>
+              <Ionicons name="star" size={12} color="#F59E0B" />
+              <Text style={[styles.ratingVal, { color: colors.text }]}>{item.rating}</Text>
+            </View>
+          ) : null}
         </View>
 
         <Text style={[styles.courseTitle, { color: colors.text }]} numberOfLines={2}>
           {item.title}
         </Text>
         <Text style={[styles.tutorName, { color: colors.textMuted }]}>
-          {item.tutor?.name || item.tutor || 'Instructor'}
+          {item.tutor?.name || item.tutor || ''}
         </Text>
 
         <View
@@ -267,7 +261,7 @@ export default function PurchasesScreen() {
           ]}
         >
           <Text style={[styles.savedPrice, { color: colors.primary }]}>
-            ₦{item.price?.toLocaleString?.() || '3,500'}
+            {typeof item.price === 'number' ? `₦${item.price.toLocaleString()}` : ''}
           </Text>
           <View style={[styles.enrollBtn, { backgroundColor: colors.primary }]}>
             <Text style={styles.enrollBtnText}>Enroll Now</Text>
@@ -301,22 +295,22 @@ export default function PurchasesScreen() {
           <Text style={[styles.receiptTxnId, { color: colors.textMuted }]}>
             {item.reference || item.id}
           </Text>
-          <View style={styles.statusSuccessBadge}>
-            <Ionicons name="checkmark-circle" size={12} color="#15803D" />
-            <Text style={styles.statusSuccessText}>Paid</Text>
+            <View style={styles.statusSuccessBadge}>
+              <Ionicons name="ellipse" size={9} color={item.status?.toLowerCase() === 'completed' ? '#15803D' : colors.textMuted} />
+              <Text style={[styles.statusSuccessText, { color: colors.textMuted }]}>{item.status || '—'}</Text>
           </View>
         </View>
 
         <Text style={[styles.receiptCourseTitle, { color: colors.text }]} numberOfLines={1}>
-          {item.courseTitle || item.title || 'Course Enrollment'}
+          {item.courseTitle || item.title || '—'}
         </Text>
 
         <View style={styles.receiptMetaRow}>
           <Text style={[styles.receiptDate, { color: colors.textMuted }]}>
-            {item.date || 'Recently'} • {item.paymentMethod || 'Paystack'}
+            {[item.date, item.paymentMethod].filter(Boolean).join(' • ')}
           </Text>
           <Text style={[styles.receiptAmount, { color: colors.text }]}>
-            ₦{item.amount?.toLocaleString?.() || '3,500'}
+            {typeof item.amount === 'number' ? `₦${item.amount.toLocaleString()}` : ''}
           </Text>
         </View>
       </View>
@@ -493,7 +487,7 @@ export default function PurchasesScreen() {
                   Payment Receipt
                 </Text>
                 <Text style={[styles.receiptSheetSub, { color: colors.textMuted }]}>
-                  Official verified transaction
+                  Transaction details
                 </Text>
               </View>
               <Pressable onPress={() => setSelectedReceipt(null)}>
@@ -516,16 +510,16 @@ export default function PurchasesScreen() {
                     <Text style={[styles.receiptBrand, { color: colors.primary }]}>
                       KLASO ACADEMY
                     </Text>
-                    <View style={styles.receiptPaidTag}>
-                      <Text style={styles.receiptPaidText}>CONFIRMED</Text>
+                    <View style={[styles.receiptPaidTag, { backgroundColor: selectedReceipt.status?.toLowerCase() === 'completed' ? '#15803D' : colors.textMuted }]}>
+                      <Text style={styles.receiptPaidText}>{selectedReceipt.status || '—'}</Text>
                     </View>
                   </View>
 
                   <Text style={[styles.receiptTotalAmount, { color: colors.text }]}>
-                    ₦{selectedReceipt.amount?.toLocaleString?.() || '3,500'}
+                    {typeof selectedReceipt.amount === 'number' ? `₦${selectedReceipt.amount.toLocaleString()}` : ''}
                   </Text>
                   <Text style={[styles.receiptItemTitle, { color: colors.textSecondary }]}>
-                    {selectedReceipt.courseTitle || selectedReceipt.title || 'Course Enrollment'}
+                    {selectedReceipt.courseTitle || selectedReceipt.title || '—'}
                   </Text>
 
                   <View
@@ -543,13 +537,12 @@ export default function PurchasesScreen() {
                       {selectedReceipt.reference || selectedReceipt.id}
                     </Text>
                   </View>
-
                   <View style={styles.receiptDetailRow}>
                     <Text style={[styles.detailKey, { color: colors.textMuted }]}>
                       Payment Method
                     </Text>
                     <Text style={[styles.detailVal, { color: colors.text }]}>
-                      {selectedReceipt.paymentMethod || 'Paystack'}
+                      {selectedReceipt.paymentMethod || ''}
                     </Text>
                   </View>
 
@@ -558,7 +551,7 @@ export default function PurchasesScreen() {
                       Date
                     </Text>
                     <Text style={[styles.detailVal, { color: colors.text }]}>
-                      {selectedReceipt.date || 'Recent'}
+                      {selectedReceipt.date || ''}
                     </Text>
                   </View>
 
@@ -567,7 +560,7 @@ export default function PurchasesScreen() {
                       Customer Email
                     </Text>
                     <Text style={[styles.detailVal, { color: colors.text }]}>
-                      {auth.currentUser?.email || 'learner@klaso.app'}
+                      {auth.currentUser?.email || ''}
                     </Text>
                   </View>
                 </View>

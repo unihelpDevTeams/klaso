@@ -79,8 +79,7 @@ export default function SearchScreen() {
   }
 
   const renderCourse = ({ item }) => {
-    const tutorName =
-      typeof item.tutor === 'string' ? item.tutor : item.tutor?.name || 'Verified educator'
+    const tutorName = typeof item.tutor === 'string' ? item.tutor : item.tutor?.name || ''
 
     return (
       <Pressable
@@ -114,18 +113,20 @@ export default function SearchScreen() {
         )}
         <View style={styles.courseDetails}>
           <Text style={[styles.subject, { color: colors.primary }]} numberOfLines={1}>
-            {item.subject || 'General'}
+            {item.subject || ''}
           </Text>
           <Text style={[styles.courseTitle, { color: colors.text }]} numberOfLines={2}>
-            {item.title || 'Untitled course'}
+            {item.title || ''}
           </Text>
           <Text style={[styles.tutor, { color: colors.textMuted }]} numberOfLines={1}>
             {tutorName}
           </Text>
           <Text style={[styles.price, { color: colors.text }]}>
-            {typeof item.price === 'number' && item.price > 0
-              ? `₦${item.price.toLocaleString()}`
-              : 'Free'}
+            {typeof item.price === 'number'
+              ? item.price === 0
+                ? 'Free'
+                : `₦${item.price.toLocaleString()}`
+              : 'Price unavailable'}
           </Text>
         </View>
         <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />

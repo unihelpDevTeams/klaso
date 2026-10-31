@@ -5,16 +5,12 @@ import {
   collection,
   doc,
   getDocs,
-  onSnapshot,
-  query,
   updateDoc,
-  where,
 } from 'firebase/firestore'
 import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -27,12 +23,11 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../firebase/config'
 import { verifyAdminAccess } from '../firebase/adminAccess'
 import { useTheme } from '../context/ThemeContext'
-import { clearSeededFirestoreCourses, seedFirestoreDatabase } from '../firebase/seedData'
 
 const TABS = [
   { id: 'approvals', label: 'Tutor Approvals', icon: 'shield-checkmark-outline' },
   { id: 'users', label: 'User Directory', icon: 'people-outline' },
-  { id: 'metrics', label: 'Platform Stats & DB', icon: 'bar-chart-outline' },
+  { id: 'metrics', label: 'Platform Stats', icon: 'bar-chart-outline' },
 ]
 
 export default function AdminPanel() {
@@ -43,13 +38,10 @@ export default function AdminPanel() {
   const [allUsers, setAllUsers] = useState([])
   const [coursesCount, setCoursesCount] = useState(0)
   const [enrollmentsCount, setEnrollmentsCount] = useState(0)
-  const [bookingsCount, setBookingsCount] = useState(0)
   const [loading, setLoading] = useState(true)
   const [accessState, setAccessState] = useState('checking')
   const [accessError, setAccessError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
-  const [seeding, setSeeding] = useState(false)
-  const [clearing, setClearing] = useState(false)
 
   const loadData = async () => {
     try {
@@ -74,8 +66,6 @@ export default function AdminPanel() {
       const enrollmentsSnap = await getDocs(collection(db, 'enrollments'))
       setEnrollmentsCount(enrollmentsSnap.size)
 
-      const bookingsSnap = await getDocs(collection(db, 'bookings'))
-      setBookingsCount(bookingsSnap.size)
     } catch (error) {
       console.log('Failed to load admin data', error)
     } finally {
@@ -143,9 +133,8 @@ export default function AdminPanel() {
         curr.map((u) => (u.id === userId ? { ...u, approved: true } : u))
       )
       Alert.alert('Tutor Approved! ✅', 'The tutor profile is now public in the marketplace.')
-    } catch {
-      setPendingTutors((curr) => curr.filter((u) => u.id !== userId))
-      Alert.alert('Tutor Approved! ✅', 'Tutor has been verified and granted publishing access.')
+    } catch (error) {
+      Alert.alert('Approval Not Saved', error.message || 'Unable to update this tutor. Please try again.')
     }
   }
 
@@ -162,8 +151,9 @@ export default function AdminPanel() {
             try {
               const userRef = doc(db, 'users', userId)
               await updateDoc(userRef, { role: 'student', approved: false })
-            } catch {
-              // Ignore
+            } catch (error) {
+              Alert.alert('Decline Not Saved', error.message || 'Unable to update this application.')
+              return
             }
             setPendingTutors((curr) => curr.filter((u) => u.id !== userId))
             Alert.alert('Application Declined', 'The application was removed from the pending queue.')
@@ -196,60 +186,8 @@ export default function AdminPanel() {
                 )
               )
               Alert.alert('Success', `User role changed to ${newRole}.`)
-            } catch {
-              setAllUsers((curr) =>
-                curr.map((u) => (u.id === userId ? { ...u, role: newRole } : u))
-              )
-              Alert.alert('Success', `User role changed to ${newRole}.`)
-            }
-          },
-        },
-      ]
-    )
-  }
-
-  const handleSeedDatabase = async () => {
-    setSeeding(true)
-    try {
-      const res = await seedFirestoreDatabase(false)
-      if (res.alreadySeeded) {
-        Alert.alert(
-          'Already Populated',
-          `The database already contains ${res.count} active courses. No duplicate items were created.`
-        )
-      } else {
-        Alert.alert(
-          'Seeding Complete! 🎉',
-          `Successfully seeded ${res.coursesCount} authentic WAEC/JAMB courses and ${res.tutorsCount} verified Nigerian tutor profiles into Firestore.`
-        )
-      }
-      loadData()
-    } catch (err) {
-      Alert.alert('Seeding Error', String(err?.message || err))
-    } finally {
-      setSeeding(false)
-    }
-  }
-
-  const handleClearCourses = async () => {
-    Alert.alert(
-      'Clear Sample Courses',
-      'Are you sure you want to delete all seeded courses from Firestore to test the empty state?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Clear All',
-          style: 'destructive',
-          onPress: async () => {
-            setClearing(true)
-            try {
-              const res = await clearSeededFirestoreCourses()
-              Alert.alert('Courses Cleared', `Removed ${res.count} course documents from Firestore.`)
-              loadData()
-            } catch (err) {
-              Alert.alert('Error', String(err))
-            } finally {
-              setClearing(false)
+            } catch (error) {
+              Alert.alert('Role Not Changed', error.message || 'Unable to update this account.')
             }
           },
         },
@@ -258,7 +196,6 @@ export default function AdminPanel() {
   }
 
   const totalStudents = allUsers.filter((u) => u.role === 'student').length
-  const totalTutors = allUsers.filter((u) => u.role === 'tutor').length
   const totalApprovedTutors = allUsers.filter(
     (u) => u.role === 'tutor' && u.approved === true
   ).length
@@ -480,7 +417,7 @@ export default function AdminPanel() {
                       Subject Area:
                     </Text>
                     <Text style={[styles.detailValue, { color: colors.text }]}>
-                      {tutor.subject || 'Mathematics'}
+                      {tutor.subject || '—'}
                     </Text>
                   </View>
 
@@ -489,7 +426,7 @@ export default function AdminPanel() {
                       Qualification:
                     </Text>
                     <Text style={[styles.detailValue, { color: colors.text }]}>
-                      {tutor.qualification || 'B.Sc Degree'}
+                      {tutor.qualification || tutor.education || '—'}
                     </Text>
                   </View>
 
@@ -498,7 +435,7 @@ export default function AdminPanel() {
                       Hourly Rate:
                     </Text>
                     <Text style={[styles.detailValue, { color: colors.primary, fontWeight: '800' }]}>
-                      ₦{(tutor.hourlyRate || 3500).toLocaleString()} / hr
+                      {typeof tutor.hourlyRate === 'number' ? `₦${tutor.hourlyRate.toLocaleString()} / hr` : '—'}
                     </Text>
                   </View>
 
@@ -561,10 +498,10 @@ export default function AdminPanel() {
                   <View style={styles.userTopRow}>
                     <View style={{ flex: 1 }}>
                       <Text style={[styles.userName, { color: colors.text }]}>
-                        {user.displayName || 'Account User'}
+                        {user.displayName || '—'}
                       </Text>
                       <Text style={[styles.userEmailText, { color: colors.textMuted }]}>
-                        {user.email || 'No email'}
+                        {user.email || '—'}
                       </Text>
                     </View>
                     <View
@@ -726,71 +663,6 @@ export default function AdminPanel() {
               </View>
             </View>
 
-            {/* SEED & DATABASE CONTROLS */}
-            <View
-              style={[
-                styles.dbControlCard,
-                { backgroundColor: colors.card, borderColor: colors.border },
-              ]}
-            >
-              <View style={styles.dbHeader}>
-                <Ionicons name="server-outline" size={20} color="#7C3AED" />
-                <Text style={[styles.dbTitle, { color: colors.text }]}>
-                  Database Management
-                </Text>
-              </View>
-              <Text style={[styles.dbSubtitle, { color: colors.textMuted }]}>
-                Populate authentic curriculum courses & verified Nigerian tutors into Firestore in one tap, or reset to test clean empty states.
-              </Text>
-
-              <View style={styles.dbActionRow}>
-                <Pressable
-                  style={[styles.seedMainBtn, { backgroundColor: '#7C3AED' }]}
-                  onPress={handleSeedDatabase}
-                  disabled={seeding}
-                >
-                  {seeding ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <Ionicons name="sparkles" size={16} color="#FFFFFF" />
-                      <Text style={styles.seedMainBtnText}>Seed Verified Data</Text>
-                    </>
-                  )}
-                </Pressable>
-
-                <Pressable
-                  style={[styles.clearBtn, { borderColor: '#DC2626' }]}
-                  onPress={handleClearCourses}
-                  disabled={clearing}
-                >
-                  {clearing ? (
-                    <ActivityIndicator size="small" color="#DC2626" />
-                  ) : (
-                    <>
-                      <Ionicons name="trash-outline" size={16} color="#DC2626" />
-                      <Text style={styles.clearBtnText}>Clear Courses</Text>
-                    </>
-                  )}
-                </Pressable>
-              </View>
-            </View>
-
-            {/* SYSTEM STATUS CARD */}
-            <View
-              style={[
-                styles.systemHealthCard,
-                { backgroundColor: isDark ? '#14291B' : '#F0FDF4', borderColor: isDark ? '#1C4A2A' : '#BBF7D0' },
-              ]}
-            >
-              <View style={styles.systemHealthTop}>
-                <Ionicons name="checkmark-circle" size={20} color="#15803D" />
-                <Text style={styles.systemHealthTitle}>Infrastructure Connected</Text>
-              </View>
-              <Text style={styles.systemHealthSub}>
-                Firebase Auth & Firestore: Active (Project vidklass) • Backend Upload API: Port 3000 • Dark & Light Mode: System Sync
-              </Text>
-            </View>
           </View>
         )}
       </ScrollView>

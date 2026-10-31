@@ -7,6 +7,7 @@ import {
   getDoc,
   getDocs,
   query,
+  serverTimestamp,
   updateDoc,
   where,
 } from 'firebase/firestore'
@@ -26,11 +27,10 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../../firebase/config'
 import { useTheme } from '../../context/ThemeContext'
-import { REAL_SAMPLE_COURSES } from '../../firebase/seedData'
 
 export default function LessonDetailScreen() {
   const router = useRouter()
-  const { lessonId, courseId, title, videoUrl } = useLocalSearchParams()
+  const { lessonId, courseId, videoUrl } = useLocalSearchParams()
   const selectedVideoUrl = typeof videoUrl === 'string' ? videoUrl : null
   const requestedCourseId = lessonId || courseId
   const { colors, isDark } = useTheme()
@@ -52,43 +52,45 @@ export default function LessonDetailScreen() {
           const docRef = doc(db, 'courses', String(requestedCourseId))
           const docSnap = await getDoc(docRef)
           if (docSnap.exists()) {
-            setCourse({ id: docSnap.id, ...docSnap.data() })
+            const data = docSnap.data()
+            let curriculum = Array.isArray(data.curriculum) ? data.curriculum : []
+            if (!curriculum.length && data.lessonId) {
+              const lessonSnapshot = await getDoc(doc(db, 'lessons', data.lessonId))
+              if (lessonSnapshot.exists()) {
+                curriculum = [{ id: lessonSnapshot.id, ...lessonSnapshot.data() }]
+              }
+            } else if (!curriculum.length) {
+              const lessonSnapshot = await getDocs(
+                query(collection(db, 'lessons'), where('courseId', '==', docSnap.id))
+              )
+              curriculum = lessonSnapshot.docs.map((lessonDoc) => ({
+                id: lessonDoc.id,
+                ...lessonDoc.data(),
+              }))
+            }
+            setCourse({ id: docSnap.id, ...data, curriculum })
             setLoading(false)
             return
           }
         }
 
-        // Match sample course
-        const matched =
-          REAL_SAMPLE_COURSES.find(
-            (c) => c.title === title || c.id === requestedCourseId
-          ) || REAL_SAMPLE_COURSES[0]
-
-        setCourse({
-          id: requestedCourseId || '1',
-          ...matched,
-          image: matched.thumbnailUrl,
-        })
+        setCourse(null)
       } catch (err) {
         console.log('Error loading lesson:', err)
-        setCourse({
-          id: '1',
-          ...REAL_SAMPLE_COURSES[0],
-          image: REAL_SAMPLE_COURSES[0].thumbnailUrl,
-        })
+        setCourse(null)
       } finally {
         setLoading(false)
       }
     }
     loadLesson()
-  }, [requestedCourseId, title])
+  }, [requestedCourseId])
 
   useEffect(() => {
     videoPlayer.replace(selectedVideoUrl || course?.videoUrl || null)
   }, [course?.videoUrl, selectedVideoUrl, videoPlayer])
 
   const toggleVideoPlayback = () => {
-    if (!course?.videoUrl) {
+    if (!selectedVideoUrl && !course?.videoUrl) {
       Alert.alert('Video unavailable', 'This lesson does not have an uploaded video yet.')
       return
     }
@@ -125,17 +127,22 @@ export default function LessonDetailScreen() {
       if (!snap.empty) {
         const docRef = doc(db, 'enrollments', snap.docs[0].id)
         const currentData = snap.docs[0].data()
-        const newCompleted = Math.min(
-          (currentData.completedLessons || 0) + 1,
-          currentData.totalLessons || 12
-        )
-        const newProgress = newCompleted / (currentData.totalLessons || 12)
+        const totalLessons = currentData.totalLessons || course.lessonsCount || course.curriculum?.length || 0
+        if (!totalLessons) {
+          Alert.alert('Progress Unavailable', 'This course has no lesson count recorded yet.')
+          return
+        }
+        const newCompleted = Math.min((currentData.completedLessons || 0) + 1, totalLessons)
+        const newProgress = newCompleted / totalLessons
 
         await updateDoc(docRef, {
           completedLessons: newCompleted,
           progress: newProgress,
-          lastAccessed: 'Just now',
+          lastAccessedAt: serverTimestamp(),
         })
+      } else {
+        Alert.alert('Enrollment Required', 'This course is not in your enrolled courses.')
+        return
       }
 
       Alert.alert(
@@ -144,7 +151,7 @@ export default function LessonDetailScreen() {
       )
     } catch (err) {
       console.log('Error updating lesson progress:', err)
-      Alert.alert('Progress Saved', 'Lesson marked as completed.')
+      Alert.alert('Progress Not Saved', 'Your lesson progress could not be updated. Please try again.')
     } finally {
       setUpdatingProgress(false)
     }
@@ -161,7 +168,7 @@ export default function LessonDetailScreen() {
     }
   }
 
-  if (loading || !course) {
+  if (loading) {
     return (
       <SafeAreaView
         style={[
@@ -181,13 +188,24 @@ export default function LessonDetailScreen() {
     )
   }
 
-  const curriculum = course.curriculum || [
-    { id: 'm1', title: '1. Introduction to Core Principles', duration: '25m' },
-    { id: 'm2', title: '2. Step-by-Step Problem Walkthrough', duration: '35m' },
-    { id: 'm3', title: '3. Past Examination Question Drills', duration: '40m' },
-  ]
+  if (!course) {
+    return (
+      <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background, justifyContent: 'center', alignItems: 'center', padding: 24 }]}>
+        <Ionicons name="book-outline" size={40} color={colors.textMuted} />
+        <Text style={[styles.title, { color: colors.text, marginTop: 16 }]}>Course unavailable</Text>
+        <Text style={[styles.loadingText, { color: colors.textMuted, textAlign: 'center' }]}>
+          This course could not be loaded from the catalog.
+        </Text>
+        <Pressable onPress={() => router.back()} style={[styles.primaryButton, { backgroundColor: colors.primary, marginTop: 20 }]}>
+          <Text style={styles.primaryButtonText}>Go Back</Text>
+        </Pressable>
+      </SafeAreaView>
+    )
+  }
 
-  const tutorName = course.tutor?.name || course.tutor || 'Verified Instructor'
+  const curriculum = Array.isArray(course.curriculum) ? course.curriculum : []
+
+  const tutorName = course.tutor?.name || course.tutor || ''
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -229,7 +247,7 @@ export default function LessonDetailScreen() {
           ]}
         >
           <View style={styles.thumbnail}>
-            {isPlaying && course.videoUrl ? (
+            {isPlaying && (selectedVideoUrl || course.videoUrl) ? (
               <VideoView
                 player={videoPlayer}
                 style={styles.videoView}
@@ -238,11 +256,17 @@ export default function LessonDetailScreen() {
               />
             ) : (
               <>
-                <Image
-                  source={{ uri: course.image || course.thumbnailUrl }}
-                  style={styles.thumbImage}
-                  resizeMode="cover"
-                />
+                {course.image || course.thumbnailUrl ? (
+                  <Image
+                    source={{ uri: course.image || course.thumbnailUrl }}
+                    style={styles.thumbImage}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={[styles.thumbImage, styles.thumbnailFallback]}>
+                    <Ionicons name="book-outline" size={36} color={colors.textMuted} />
+                  </View>
+                )}
                 <Pressable style={styles.playBadge} onPress={toggleVideoPlayback}>
                   <Ionicons name="play" size={26} color="#FFFFFF" style={{ marginLeft: 3 }} />
                 </Pressable>
@@ -250,13 +274,13 @@ export default function LessonDetailScreen() {
             )}
             <View style={styles.durationTag}>
               <Text style={styles.duration}>
-                {isPlaying ? 'Playing • HD' : course.duration}
+                {isPlaying ? 'Playing' : course.duration}
               </Text>
             </View>
           </View>
 
           <View style={styles.metaRow}>
-            <View
+            {course.level ? <View
               style={[
                 styles.tag,
                 { backgroundColor: isDark ? '#14331C' : '#DCFCE7' },
@@ -270,7 +294,7 @@ export default function LessonDetailScreen() {
               >
                 {course.subject}
               </Text>
-            </View>
+            </View> : null}
             <View
               style={[
                 styles.tag,
@@ -290,7 +314,7 @@ export default function LessonDetailScreen() {
 
           <Text style={[styles.title, { color: colors.text }]}>{course.title}</Text>
 
-          <View style={styles.tutorRow}>
+          {tutorName ? <View style={styles.tutorRow}>
             {course.tutor?.avatar ? (
               <Image source={{ uri: course.tutor.avatar }} style={styles.avatarImg} />
             ) : (
@@ -307,16 +331,19 @@ export default function LessonDetailScreen() {
             )}
             <View style={{ flex: 1 }}>
               <Text style={[styles.tutor, { color: colors.text }]}>{tutorName}</Text>
-              <Text style={[styles.views, { color: colors.textMuted }]}>
-                ⭐ {course.rating || '4.9'} ({course.reviewsCount || '140'} reviews)
-              </Text>
+              {course.rating != null ? (
+                <Text style={[styles.views, { color: colors.textMuted }]}>
+                  {`★ ${course.rating}`}{course.reviewsCount != null ? ` (${course.reviewsCount} reviews)` : ''}
+                </Text>
+              ) : null}
             </View>
-          </View>
+          </View> : null}
 
-          <Text style={[styles.description, { color: colors.textSecondary }]}>
-            {course.headline ||
-              'Complete video module covering core conceptual understanding and high-yield examination problem solving.'}
-          </Text>
+          {course.headline ? (
+            <Text style={[styles.description, { color: colors.textSecondary }]}>
+              {course.headline}
+            </Text>
+          ) : null}
         </View>
 
         {/* Modules Interactive Checklist */}
@@ -329,7 +356,7 @@ export default function LessonDetailScreen() {
           <Text style={[styles.sectionTitle, { color: colors.text }]}>
             Lesson Modules & Checkpoints
           </Text>
-          {curriculum.map((module, index) => {
+          {curriculum.length ? curriculum.map((module, index) => {
             const isDone = completedModules[module.id || index]
             return (
               <Pressable
@@ -371,16 +398,20 @@ export default function LessonDetailScreen() {
                   >
                     {module.title}
                   </Text>
-                  <Text style={[styles.moduleSub, { color: colors.textMuted }]}>
-                    {module.duration || '30 mins'}
-                  </Text>
+                  {module.duration ? (
+                    <Text style={[styles.moduleSub, { color: colors.textMuted }]}>
+                      {module.duration}
+                    </Text>
+                  ) : null}
                 </View>
                 {isDone && (
                   <Ionicons name="checkmark-done" size={18} color={colors.primary} />
                 )}
               </Pressable>
             )
-          })}
+          }) : (
+            <Text style={[styles.moduleSub, { color: colors.textMuted }]}>No lessons have been added to this course yet.</Text>
+          )}
         </View>
 
         {/* Mark Lesson Complete Button */}

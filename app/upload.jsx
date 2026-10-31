@@ -26,9 +26,9 @@ const defaultForm = {
   description: '',
   hashtags: '',
   subject: '',
-  level: 'Intermediate',
-  duration: '45 mins',
-  price: '3500',
+  level: '',
+  duration: '',
+  price: '',
 }
 
 export default function UploadScreen() {
@@ -106,8 +106,9 @@ export default function UploadScreen() {
       return
     }
 
-    if (!form.title.trim() || !form.description.trim() || !form.subject.trim()) {
-      setError('Title, description, and subject are required.')
+    const price = Number(form.price)
+    if (!form.title.trim() || !form.description.trim() || !form.subject.trim() || !form.price.trim() || !Number.isFinite(price) || price < 0) {
+      setError('Title, description, subject, and a valid price are required. Enter 0 for a free course.')
       return
     }
 
@@ -138,10 +139,9 @@ export default function UploadScreen() {
         title: form.title.trim(),
         headline: form.description.trim(),
         subject: form.subject.trim(),
-        level: form.level || 'Intermediate',
-        duration: form.duration ? `${form.duration}` : '45 mins',
-        price: Number(form.price) || 3500,
-        originalPrice: (Number(form.price) || 3500) * 1.5,
+        ...(form.level.trim() ? { level: form.level.trim() } : {}),
+        ...(form.duration.trim() ? { duration: form.duration.trim() } : {}),
+        price,
         thumbnailUrl,
         thumbnailKey: uploadedThumbnail?.key || '',
         videoUrl: uploadedVideo.url,
@@ -149,7 +149,6 @@ export default function UploadScreen() {
         tutor: {
           name: auth.currentUser.displayName || '',
           ...(auth.currentUser.photoURL ? { avatar: auth.currentUser.photoURL } : {}),
-          title: `${form.subject.trim()} Instructor`,
         },
         status: 'published',
         createdBy: auth.currentUser.uid,

@@ -160,8 +160,8 @@ export default function Profile() {
     ])
   }
 
-  const userName = userProfile?.displayName || auth.currentUser?.displayName || 'Student Learner'
-  const userEmail = auth.currentUser?.email || 'learner@klaso.app'
+  const userName = userProfile?.displayName || auth.currentUser?.displayName || ''
+  const userEmail = auth.currentUser?.email || ''
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -371,7 +371,7 @@ export default function Profile() {
                 ]}
               >
                 <Text style={[styles.statValue, { color: colors.text }]}>
-                  {userProfile?.reviewsCount || 0}
+                  {userProfile?.reviewsCount ?? '—'}
                 </Text>
                 <Text style={[styles.statLabel, { color: colors.textMuted }]}>Reviews</Text>
               </View>
@@ -382,7 +382,7 @@ export default function Profile() {
                 ]}
               >
                 <Text style={[styles.statValue, { color: colors.text }]}>
-                  ★ {userProfile?.rating || '5.0'}
+                  {userProfile?.rating != null ? `★ ${userProfile.rating}` : '—'}
                 </Text>
                 <Text style={[styles.statLabel, { color: colors.textMuted }]}>Tutor Score</Text>
               </View>
@@ -393,7 +393,7 @@ export default function Profile() {
                 ]}
               >
                 <Text style={[styles.statValue, { color: colors.text }]}>
-                  ₦{userProfile?.hourlyRate?.toLocaleString() || '3,500'}
+                  {typeof userProfile?.hourlyRate === 'number' ? `₦${userProfile.hourlyRate.toLocaleString()}` : '—'}
                 </Text>
                 <Text style={[styles.statLabel, { color: colors.textMuted }]}>Hourly Rate</Text>
               </View>
@@ -418,7 +418,7 @@ export default function Profile() {
                 ]}
               >
                 <Text style={[styles.statValue, { color: '#F59E0B' }]}>
-                  🔥 {enrollmentCount > 0 ? '3' : '1'}
+                  {userProfile?.dayStreak ?? userProfile?.streakCount ?? '—'}
                 </Text>
                 <Text style={[styles.statLabel, { color: colors.textMuted }]}>Day Streak</Text>
               </View>

@@ -30,7 +30,7 @@ export default function BecomeTutorScreen() {
 
   const [subject, setSubject] = useState('')
   const [education, setEducation] = useState('')
-  const [hourlyRate, setHourlyRate] = useState('3500')
+  const [hourlyRate, setHourlyRate] = useState('')
   const [bio, setBio] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
@@ -40,8 +40,9 @@ export default function BecomeTutorScreen() {
       return
     }
 
-    if (!subject.trim() || !bio.trim()) {
-      Alert.alert('Incomplete Form', 'Please provide your teaching subject and bio.')
+    const parsedHourlyRate = Number(hourlyRate)
+    if (!subject.trim() || !bio.trim() || !Number.isFinite(parsedHourlyRate) || parsedHourlyRate <= 0) {
+      Alert.alert('Incomplete Form', 'Please provide your teaching subject, bio, and a valid hourly rate.')
       return
     }
 
@@ -52,8 +53,8 @@ export default function BecomeTutorScreen() {
         role: 'tutor',
         approved: false, // Pending admin review
         subject: subject.trim(),
-        education: education.trim() || 'Accredited Degree',
-        hourlyRate: Number(hourlyRate) || 3500,
+        education: education.trim(),
+        hourlyRate: parsedHourlyRate,
         bio: bio.trim(),
         appliedAt: serverTimestamp(),
       })

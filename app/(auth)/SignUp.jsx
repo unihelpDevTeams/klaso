@@ -43,12 +43,12 @@ export default function SignUp() {
     password: '',
     confirmPassword: '',
     // Tutor specific fields
-    subject: 'Mathematics',
+    subject: '',
     qualification: '',
-    hourlyRate: '3500',
+    hourlyRate: '',
     bio: '',
     // Student specific field
-    targetExam: 'WAEC / JAMB',
+    targetExam: '',
   })
 
   const [errors, setErrors] = useState({})
@@ -82,6 +82,9 @@ export default function SignUp() {
     else if (form.confirmPassword !== form.password) nextErrors.confirmPassword = 'Passwords do not match.'
 
     if (selectedRole === 'tutor') {
+      if (!form.subject.trim()) {
+        nextErrors.subject = 'Choose a teaching subject.'
+      }
       if (!form.qualification.trim()) {
         nextErrors.qualification = 'Highest degree or qualification is required.'
       }
@@ -102,6 +105,7 @@ export default function SignUp() {
       password: true,
       confirmPassword: true,
       qualification: true,
+      subject: true,
       hourlyRate: true,
       bio: true,
       terms: true,
@@ -145,14 +149,10 @@ export default function SignUp() {
         userData.qualification = form.qualification.trim()
         userData.hourlyRate = Number(form.hourlyRate.trim())
         userData.bio = form.bio.trim()
-        userData.specialty = `${form.subject} Specialist`
         userData.approved = isEmailAdmin ? true : false // Needs admin review unless admin
-        userData.rating = 5.0
         userData.reviewsCount = 0
-        userData.experience = 'Newly Verified Tutor'
       } else {
         userData.targetExam = form.targetExam
-        userData.streakCount = 1
         userData.enrolledCount = 0
         userData.certificatesCount = 0
       }
@@ -359,6 +359,9 @@ export default function SignUp() {
                       )
                     })}
                   </View>
+                  {!!errors.subject && (
+                    <Text style={[styles.error, { color: colors.danger }]}>{errors.subject}</Text>
+                  )}
                 </View>
 
                 <Field

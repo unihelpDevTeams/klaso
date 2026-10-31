@@ -34,7 +34,6 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import Header from '../components/header'
 import { auth, db } from '../../firebase/config'
 import { useTheme } from '../../context/ThemeContext'
-import { seedFirestoreDatabase } from '../../firebase/seedData'
 
 /* -------------------------------------------------------------------------- */
 /*  Config                                                                    */
@@ -102,7 +101,7 @@ const formatPrice = (price) => {
 const getTutorName = (course) =>
   course.tutor?.name ||
   (typeof course.tutor === 'string' ? course.tutor : null) ||
-  'Verified educator'
+  ''
 
 const clamp01 = (n) => Math.max(0, Math.min(1, Number(n) || 0))
 
@@ -117,7 +116,7 @@ const docsToList = (snapshot) =>
 /* -------------------------------------------------------------------------- */
 
 const Skeleton = memo(function Skeleton({ style, color }) {
-  const opacity = useRef(new Animated.Value(0.4)).current
+  const [opacity] = useState(() => new Animated.Value(0.4))
   useEffect(() => {
     const loop = Animated.loop(
       Animated.sequence([
@@ -141,18 +140,6 @@ const CourseSkeleton = memo(function CourseSkeleton({ colors, isDark }) {
         <Skeleton color={tone} style={{ height: 16, width: '85%', borderRadius: 6, marginTop: 12 }} />
         <Skeleton color={tone} style={{ height: 12, width: '65%', borderRadius: 6, marginTop: 8 }} />
       </View>
-    </View>
-  )
-})
-
-const StatCard = memo(function StatCard({ icon, tint, bg, value, label, colors }) {
-  return (
-    <View style={[styles.statCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-      <View style={[styles.statIconBadge, { backgroundColor: bg }]}>
-        <Ionicons name={icon} size={18} color={tint} />
-      </View>
-      <Text style={[styles.statValue, { color: colors.text }]}>{value}</Text>
-      <Text style={[styles.statLabel, { color: colors.textMuted }]}>{label}</Text>
     </View>
   )
 })
@@ -214,16 +201,16 @@ const CourseCard = memo(function CourseCard({ course, colors, isDark, onPress })
                 ) : null}
               </>
             ) : (
-              <Text style={[styles.reviewsText, { color: colors.textMuted }]}>New course</Text>
+              <Text style={[styles.reviewsText, { color: colors.textMuted }]}>Rating unavailable</Text>
             )}
           </View>
-          <View
-            style={[styles.subjectBadge, { backgroundColor: isDark ? '#14331C' : '#DCFCE7' }]}
-          >
-            <Text style={[styles.subjectBadgeText, { color: isDark ? '#4ADE80' : '#15803D' }]}>
-              {course.subject || 'General'}
-            </Text>
-          </View>
+          {course.subject ? (
+            <View style={[styles.subjectBadge, { backgroundColor: isDark ? '#14331C' : '#DCFCE7' }]}>
+              <Text style={[styles.subjectBadgeText, { color: isDark ? '#4ADE80' : '#15803D' }]}>
+                {course.subject}
+              </Text>
+            </View>
+          ) : null}
         </View>
 
         <Text style={[styles.courseTitle, { color: colors.text }]} numberOfLines={2}>
@@ -248,7 +235,7 @@ const CourseCard = memo(function CourseCard({ course, colors, isDark, onPress })
                 ]}
               >
                 <Text style={[styles.tutorInitial, { color: isDark ? '#E5E7EB' : '#374151' }]}>
-                  {tutorName[0]}
+                  {tutorName[0] || ''}
                 </Text>
               </View>
             )}
@@ -259,7 +246,7 @@ const CourseCard = memo(function CourseCard({ course, colors, isDark, onPress })
           <View style={styles.durationRow}>
             <Ionicons name="play-circle-outline" size={14} color={colors.textMuted} />
             <Text style={[styles.durationText, { color: colors.textMuted }]}>
-              {course.duration || `${course.lessonsCount || 0} lessons`}
+              {course.duration || (course.lessonsCount != null ? `${course.lessonsCount} lessons` : '')}
             </Text>
           </View>
         </View>
@@ -290,7 +277,6 @@ export default function Home() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState(null)
-  const [seeding, setSeeding] = useState(false)
   const [homeProfile, setHomeProfile] = useState(null)
   const [roleLoading, setRoleLoading] = useState(true)
   const [tutorCourses, setTutorCourses] = useState([])
@@ -306,13 +292,11 @@ export default function Home() {
   const categoriesTs = useRef(0)
   const selectedCategoryRef = useRef('All')
 
-  // Categories: { [subject]: courseCount } from meta/categories, plus any
-  // subjects we have actually seen on loaded courses.
+  // Categories: { [subject]: courseCount } from meta/categories and loaded courses.
   const [categoryCounts, setCategoryCounts] = useState(null)
-  const [knownSubjects, setKnownSubjects] = useState([])
 
   const user = auth.currentUser
-  const firstName = user?.displayName?.split(' ')[0] || 'Learner'
+  const firstName = user?.displayName?.split(' ')[0]
   const isApprovedTutor = homeProfile?.role === 'tutor' && homeProfile?.approved === true
 
   /* ----------------------------- Data fetching ----------------------------- */
@@ -475,17 +459,6 @@ export default function Home() {
     }
   }, [loadCategories, loadCourses, loadEnrollments, loadTutorDashboard])
 
-  // Fallback / complement: remember every subject seen on loaded courses
-  useEffect(() => {
-    const found = courses.map((c) => c.subject).filter(Boolean)
-    if (!found.length) return
-    setKnownSubjects((prev) => {
-      const next = new Set(prev)
-      found.forEach((subject) => next.add(subject))
-      return next.size === prev.length ? prev : [...next]
-    })
-  }, [courses])
-
   // Load the account role and role-specific home data when the tab is focused.
   useFocusEffect(
     useCallback(() => {
@@ -512,20 +485,6 @@ export default function Home() {
     loadCourses(selectedCategory, { more: true })
   }, [selectedCategory, loadCourses])
 
-  const handleQuickSeed = useCallback(async () => {
-    try {
-      setSeeding(true)
-      await seedFirestoreDatabase(false)
-      cacheRef.current = {}
-      setKnownSubjects([])
-      await loadCourses('All', { refresh: true })
-    } catch (err) {
-      console.log('Seed error:', err)
-    } finally {
-      setSeeding(false)
-    }
-  }, [loadCourses])
-
   /* ------------------------------ Derived data ----------------------------- */
 
   // Search runs on already-loaded courses, so it costs zero reads
@@ -546,17 +505,6 @@ export default function Home() {
     return sorted
   }, [courses, debouncedQuery, sortBy])
 
-  const stats = useMemo(() => {
-    const completed = enrollments.filter((e) => clamp01(e.progress) >= 1).length
-    const active = enrollments.length - completed
-    const avg = enrollments.length
-      ? Math.round(
-          (enrollments.reduce((sum, e) => sum + clamp01(e.progress), 0) / enrollments.length) * 100
-        )
-      : 0
-    return { active, completed, avg }
-  }, [enrollments])
-
   // Category chips built from what is actually available
   const categories = useMemo(() => {
     const map = new Map()
@@ -565,8 +513,8 @@ export default function Home() {
         if (Number(n) > 0) map.set(label, Number(n)) // hide empty categories
       })
     }
-    knownSubjects.forEach((label) => {
-      if (!map.has(label)) map.set(label, null)
+    courses.forEach((course) => {
+      if (course.subject && !map.has(course.subject)) map.set(course.subject, null)
     })
     if (selectedCategory !== 'All' && !map.has(selectedCategory)) map.set(selectedCategory, null)
 
@@ -577,7 +525,7 @@ export default function Home() {
       ? Object.values(categoryCounts).reduce((sum, n) => sum + (Number(n) || 0), 0)
       : null
     return [{ id: 'all', label: 'All', count: total || null }, ...list]
-  }, [categoryCounts, knownSubjects, selectedCategory])
+  }, [categoryCounts, courses, selectedCategory])
 
   // Most recently touched course that isn't finished yet
   const activeCourse = useMemo(() => {
@@ -610,7 +558,7 @@ export default function Home() {
           <View style={[styles.heroCard, { backgroundColor: colors.primaryDark }]}>
             <View style={styles.heroTextCol}>
               <Text style={styles.heroBadge}>
-                {getGreeting()}, {firstName}
+                {getGreeting()}{firstName ? `, ${firstName}` : ''}
               </Text>
               <Text style={styles.heroTitle}>Master your exams, unlock your future.</Text>
               <Text style={styles.heroSubtitle}>
@@ -827,22 +775,6 @@ export default function Home() {
           </Pressable>
         ) : null}
 
-        {__DEV__ && courses.length === 0 && selectedCategory === 'All' ? (
-          <Pressable
-            style={[styles.seedButton, { backgroundColor: colors.primary }]}
-            onPress={handleQuickSeed}
-            disabled={seeding}
-          >
-            {seeding ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <>
-                <Ionicons name="sparkles" size={16} color="#FFFFFF" />
-                <Text style={styles.seedButtonText}>Seed sample courses (dev)</Text>
-              </>
-            )}
-          </Pressable>
-        ) : null}
       </View>
     </View>
   )
@@ -972,10 +904,10 @@ export default function Home() {
                 </View>
                 <View style={styles.tutorCourseTitleWrap}>
                   <Text style={[styles.tutorCourseTitle, { color: colors.text }]} numberOfLines={2}>
-                    {item.title || 'Untitled tutorial'}
+                    {item.title || ''}
                   </Text>
                   <Text style={[styles.tutorCourseSubject, { color: colors.textMuted }]} numberOfLines={1}>
-                    {[item.subject, item.level].filter(Boolean).join(' • ') || 'Course details not set'}
+                    {[item.subject, item.level].filter(Boolean).join(' • ')}
                   </Text>
                 </View>
               </View>
@@ -1383,34 +1315,5 @@ const styles = StyleSheet.create({
   durationRow: { flexDirection: 'row', alignItems: 'center', gap: 4 },
   durationText: { fontSize: 12 },
 
-  emptyCard: {
-    borderRadius: 20,
-    padding: 24,
-    alignItems: 'center',
-    borderWidth: StyleSheet.hairlineWidth,
-    marginVertical: 10,
-  },
-  emptyIconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 14,
-  },
-  emptyTitle: { fontSize: 16, fontWeight: '800', textAlign: 'center', marginBottom: 6 },
-  emptySub: { fontSize: 13, textAlign: 'center', lineHeight: 18, maxWidth: 280, marginBottom: 16 },
-  seedButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 12,
-    marginTop: 6,
-  },
-  seedButtonText: { color: '#FFFFFF', fontSize: 13, fontWeight: '700' },
-
-  footer: { paddingVertical: 24, alignItems: 'center' },
   endText: { fontSize: 12 },
 })

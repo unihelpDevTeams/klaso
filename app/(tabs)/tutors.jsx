@@ -1,8 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
-import { useRouter } from 'expo-router'
 import { addDoc, collection, onSnapshot, query, serverTimestamp, where } from 'firebase/firestore'
 import React, { useEffect, useMemo, useState } from 'react'
 import {
+  Alert,
   ActivityIndicator,
   FlatList,
   Image,
@@ -20,19 +20,14 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../../firebase/config'
 import { useTheme } from '../../context/ThemeContext'
 import Header from '../components/header'
-import { REAL_SAMPLE_TUTORS, seedFirestoreDatabase } from '../../firebase/seedData'
-
-const CATEGORIES = ['All', 'Mathematics', 'Science', 'Languages', 'Computer Science', 'Business']
 
 export default function TutorsScreen() {
-  const router = useRouter()
   const { colors, isDark } = useTheme()
   const [selectedCategory, setSelectedCategory] = useState('All')
   const [searchQuery, setSearchQuery] = useState('')
   const [tutors, setTutors] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [seeding, setSeeding] = useState(false)
 
   // Booking Modal State
   const [bookingTutor, setBookingTutor] = useState(null)
@@ -51,7 +46,6 @@ export default function TutorsScreen() {
 
   // Listen to Firestore verified tutors live
   useEffect(() => {
-    setLoading(true)
     const q = query(
       collection(db, 'users'),
       where('role', '==', 'tutor'),
@@ -64,28 +58,23 @@ export default function TutorsScreen() {
         if (!snapshot.empty) {
           const list = snapshot.docs.map((docSnap) => {
             const data = docSnap.data()
+            const name = data.displayName || data.name || ''
             return {
               id: docSnap.id,
-              name: data.displayName || data.name || 'Verified Tutor',
-              subject: data.subject || 'General Studies',
-              specialty: data.specialty || data.bio || 'Experienced Educator',
-              rating: data.rating || 4.9,
-              reviewsCount: data.reviewsCount || 12,
-              hourlyRate: data.hourlyRate || 3000,
-              experience: data.experience || 'Verified Tutor',
-              avatar:
-                data.photoURL ||
-                'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=400&q=80',
-              bio: data.bio || 'Dedicated educator committed to your learning success.',
-              education: data.education || 'Accredited Degree',
-              slots: data.slots || [
-                'Tomorrow, 10:00 AM',
-                'Tomorrow, 2:00 PM',
-                'Saturday, 11:00 AM',
-              ],
-              tags: data.tags || [data.subject || 'General'],
+              name,
+              subject: data.subject || '',
+              specialty: data.specialty || data.bio || '',
+              rating: typeof data.rating === 'number' ? data.rating : null,
+              reviewsCount: typeof data.reviewsCount === 'number' ? data.reviewsCount : null,
+              hourlyRate: typeof data.hourlyRate === 'number' ? data.hourlyRate : null,
+              experience: data.experience || '',
+              avatar: data.photoURL || null,
+              bio: data.bio || '',
+              education: data.education || '',
+              slots: Array.isArray(data.slots) ? data.slots : [],
+              tags: Array.isArray(data.tags) ? data.tags.filter((tag) => typeof tag === 'string') : data.subject ? [data.subject] : [],
             }
-          })
+          }).filter((tutor) => tutor.name)
           setTutors(list)
         } else {
           // If empty, start with empty list to allow real seeder
@@ -107,16 +96,10 @@ export default function TutorsScreen() {
     setTimeout(() => setRefreshing(false), 800)
   }
 
-  const handleQuickSeedTutors = async () => {
-    try {
-      setSeeding(true)
-      await seedFirestoreDatabase(false)
-    } catch (err) {
-      console.log('Seed error:', err)
-    } finally {
-      setSeeding(false)
-    }
-  }
+  const categories = useMemo(
+    () => ['All', ...new Set(tutors.map((tutor) => tutor.subject).filter(Boolean))],
+    [tutors]
+  )
 
   const filteredTutors = useMemo(() => {
     return tutors.filter((tutor) => {
@@ -129,7 +112,7 @@ export default function TutorsScreen() {
         tutor.name.toLowerCase().includes(queryLower) ||
         tutor.subject.toLowerCase().includes(queryLower) ||
         tutor.specialty.toLowerCase().includes(queryLower) ||
-        tutor.tags?.some((tag) => tag.toLowerCase().includes(queryLower))
+        tutor.tags.some((tag) => tag.toLowerCase().includes(queryLower))
 
       return matchesCategory && matchesSearch
     })
@@ -137,28 +120,30 @@ export default function TutorsScreen() {
 
   const handleOpenBooking = (tutor) => {
     setBookingTutor(tutor)
-    setSelectedSlot(tutor.slots?.[0] || 'Tomorrow, 10:00 AM')
+    setSelectedSlot(tutor.slots[0] || null)
     setBookingConfirmed(false)
   }
 
   const handleConfirmBooking = async () => {
-    if (!bookingTutor) return
+    if (!bookingTutor || !selectedSlot) return
+    if (!auth.currentUser) {
+      Alert.alert('Sign In Required', 'Please sign in before requesting a tutoring session.')
+      return
+    }
     setSubmittingBooking(true)
     try {
-      if (auth.currentUser) {
-        await addDoc(collection(db, 'bookings'), {
-          userId: auth.currentUser.uid,
-          userEmail: auth.currentUser.email,
-          userName: auth.currentUser.displayName || 'Student Learner',
-          tutorId: bookingTutor.id,
-          tutorName: bookingTutor.name,
-          subject: bookingTutor.subject,
-          hourlyRate: bookingTutor.hourlyRate,
-          slot: selectedSlot,
-          status: 'confirmed',
-          createdAt: serverTimestamp(),
-        })
-      }
+      await addDoc(collection(db, 'bookings'), {
+        userId: auth.currentUser.uid,
+        userEmail: auth.currentUser.email || null,
+        userName: auth.currentUser.displayName || null,
+        tutorId: bookingTutor.id,
+        tutorName: bookingTutor.name,
+        subject: bookingTutor.subject || null,
+        hourlyRate: bookingTutor.hourlyRate,
+        slot: selectedSlot,
+        status: 'pending',
+        createdAt: serverTimestamp(),
+      })
       setBookingConfirmed(true)
       setTimeout(() => {
         setBookingTutor(null)
@@ -166,11 +151,8 @@ export default function TutorsScreen() {
       }, 1500)
     } catch (err) {
       console.log('Booking error:', err)
-      setBookingConfirmed(true)
-      setTimeout(() => {
-        setBookingTutor(null)
-        setSubmittingBooking(false)
-      }, 1500)
+      Alert.alert('Booking Not Sent', 'The booking request could not be saved. Please try again.')
+      setSubmittingBooking(false)
     }
   }
 
@@ -182,18 +164,20 @@ export default function TutorsScreen() {
 
   const handleSendMessage = async () => {
     if (!messageText.trim() || !messagingTutor) return
+    if (!auth.currentUser) {
+      Alert.alert('Sign In Required', 'Please sign in before messaging a tutor.')
+      return
+    }
     setSendingMessage(true)
     try {
-      if (auth.currentUser) {
-        await addDoc(collection(db, 'messages'), {
-          senderId: auth.currentUser.uid,
-          senderName: auth.currentUser.displayName || 'Student',
-          recipientId: messagingTutor.id,
-          recipientName: messagingTutor.name,
-          text: messageText.trim(),
-          createdAt: serverTimestamp(),
-        })
-      }
+      await addDoc(collection(db, 'messages'), {
+        senderId: auth.currentUser.uid,
+        senderName: auth.currentUser.displayName || null,
+        recipientId: messagingTutor.id,
+        recipientName: messagingTutor.name,
+        text: messageText.trim(),
+        createdAt: serverTimestamp(),
+      })
       setMessageSent(true)
       setTimeout(() => {
         setMessagingTutor(null)
@@ -201,11 +185,8 @@ export default function TutorsScreen() {
       }, 1400)
     } catch (err) {
       console.log('Send message error:', err)
-      setMessageSent(true)
-      setTimeout(() => {
-        setMessagingTutor(null)
-        setSendingMessage(false)
-      }, 1400)
+      Alert.alert('Message Not Sent', 'Your message could not be saved. Please try again.')
+      setSendingMessage(false)
     }
   }
 
@@ -248,7 +229,7 @@ export default function TutorsScreen() {
       {/* Subject Filter Chips */}
       <View style={styles.categoriesWrapper}>
         <FlatList
-          data={CATEGORIES}
+          data={categories}
           horizontal
           keyExtractor={(item) => item}
           showsHorizontalScrollIndicator={false}
@@ -339,22 +320,6 @@ export default function TutorsScreen() {
                   : `No tutors match "${searchQuery}" in category ${selectedCategory}.`}
               </Text>
 
-              {tutors.length === 0 && (
-                <Pressable
-                  style={[styles.seedBtn, { backgroundColor: colors.primary }]}
-                  onPress={handleQuickSeedTutors}
-                  disabled={seeding}
-                >
-                  {seeding ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <Ionicons name="sparkles" size={16} color="#FFFFFF" />
-                      <Text style={styles.seedBtnText}>Populate Verified Tutors</Text>
-                    </>
-                  )}
-                </Pressable>
-              )}
             </View>
           }
           renderItem={({ item }) => (
@@ -370,7 +335,15 @@ export default function TutorsScreen() {
             >
               {/* Card Header: Avatar, Name, Specialty, Rate */}
               <View style={styles.cardHeader}>
-                <Image source={{ uri: item.avatar }} style={styles.avatar} />
+                {item.avatar ? (
+                  <Image source={{ uri: item.avatar }} style={styles.avatar} />
+                ) : (
+                  <View style={[styles.avatar, styles.avatarFallback, { backgroundColor: colors.primaryLight }]}>
+                    <Text style={{ color: colors.primary, fontWeight: '700' }}>
+                      {item.name.charAt(0).toUpperCase()}
+                    </Text>
+                  </View>
+                )}
                 <View style={styles.headerInfo}>
                   <View style={styles.nameRow}>
                     <Text
@@ -381,31 +354,33 @@ export default function TutorsScreen() {
                     </Text>
                     <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
                   </View>
-                  <Text
-                    style={[styles.specialty, { color: colors.textMuted }]}
-                    numberOfLines={1}
-                  >
-                    {item.specialty}
-                  </Text>
-                  <View style={styles.metaRow}>
-                    <View style={styles.starWrap}>
-                      <Ionicons name="star" size={14} color="#F59E0B" />
-                      <Text style={[styles.rating, { color: colors.text }]}>
-                        {item.rating}
-                      </Text>
-                      <Text style={[styles.reviews, { color: colors.textMuted }]}>
-                        ({item.reviewsCount})
-                      </Text>
-                    </View>
-                    <Text style={[styles.metaDot, { color: colors.textMuted }]}>•</Text>
-                    <Text style={[styles.experience, { color: colors.textMuted }]}>
-                      {item.experience}
+                  {item.specialty ? (
+                    <Text style={[styles.specialty, { color: colors.textMuted }]} numberOfLines={1}>
+                      {item.specialty}
                     </Text>
+                  ) : null}
+                  <View style={styles.metaRow}>
+                    {item.rating !== null ? (
+                      <View style={styles.starWrap}>
+                        <Ionicons name="star" size={14} color="#F59E0B" />
+                        <Text style={[styles.rating, { color: colors.text }]}>{item.rating}</Text>
+                        {item.reviewsCount !== null ? (
+                          <Text style={[styles.reviews, { color: colors.textMuted }]}>
+                            ({item.reviewsCount})
+                          </Text>
+                        ) : null}
+                      </View>
+                    ) : null}
+                    {item.experience ? (
+                      <Text style={[styles.experience, { color: colors.textMuted }]}>
+                        {item.experience}
+                      </Text>
+                    ) : null}
                   </View>
                 </View>
 
                 {/* Hourly Price Tag */}
-                <View
+                {item.hourlyRate !== null ? <View
                   style={[
                     styles.priceBadge,
                     { backgroundColor: isDark ? '#14331C' : '#DCFCE7' },
@@ -427,16 +402,16 @@ export default function TutorsScreen() {
                   >
                     / hr
                   </Text>
-                </View>
+                </View> : null}
               </View>
 
               {/* Bio summary */}
-              <Text
+              {item.bio ? <Text
                 style={[styles.bioSummary, { color: colors.textSecondary }]}
                 numberOfLines={2}
               >
                 {item.bio}
-              </Text>
+              </Text> : null}
 
               {/* Subject & Skill Tags */}
               <View style={styles.tagsRow}>
@@ -519,14 +494,14 @@ export default function TutorsScreen() {
                   <Ionicons name="checkmark-done" size={42} color={colors.primary} />
                 </View>
                 <Text style={[styles.modalTitle, { color: colors.text }]}>
-                  Booking Confirmed!
+                  Booking Request Sent
                 </Text>
                 <Text style={[styles.modalSub, { color: colors.textMuted }]}>
-                  Your 1-on-1 tutoring session with {bookingTutor?.name} is scheduled for{' '}
+                  Your booking request for {bookingTutor?.name} was saved for{' '}
                   <Text style={{ fontWeight: '700', color: colors.text }}>
                     {selectedSlot}
                   </Text>
-                  . A calendar invite and Google Meet link have been saved to your account.
+                  . The tutor will need to confirm the session details.
                 </Text>
               </View>
             ) : (
@@ -555,13 +530,15 @@ export default function TutorsScreen() {
                     },
                   ]}
                 >
-                  <Image source={{ uri: bookingTutor?.avatar }} style={styles.miniAvatar} />
+                  {bookingTutor?.avatar ? (
+                    <Image source={{ uri: bookingTutor.avatar }} style={styles.miniAvatar} />
+                  ) : null}
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.miniName, { color: colors.text }]}>
                       {bookingTutor?.name}
                     </Text>
                     <Text style={[styles.miniSubject, { color: colors.textMuted }]}>
-                      {bookingTutor?.subject} • ₦{bookingTutor?.hourlyRate?.toLocaleString()}/hr
+                      {[bookingTutor?.subject, bookingTutor?.hourlyRate != null ? `₦${bookingTutor.hourlyRate.toLocaleString()}/hr` : null].filter(Boolean).join(' • ')}
                     </Text>
                   </View>
                 </View>
@@ -571,7 +548,7 @@ export default function TutorsScreen() {
                   Available Time Slots
                 </Text>
                 <View style={styles.slotsList}>
-                  {bookingTutor?.slots?.map((slot, index) => {
+                  {bookingTutor?.slots.length ? bookingTutor.slots.map((slot, index) => {
                     const isPicked = selectedSlot === slot
                     return (
                       <Pressable
@@ -611,7 +588,9 @@ export default function TutorsScreen() {
                         </Text>
                       </Pressable>
                     )
-                  })}
+                  }) : (
+                    <Text style={[styles.modalSub, { color: colors.textMuted }]}>No availability has been provided.</Text>
+                  )}
                 </View>
 
                 {/* Action Buttons */}
@@ -633,13 +612,13 @@ export default function TutorsScreen() {
                       { backgroundColor: colors.primary },
                     ]}
                     onPress={handleConfirmBooking}
-                    disabled={submittingBooking}
+                    disabled={submittingBooking || !selectedSlot}
                   >
                     {submittingBooking ? (
                       <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
                       <Text style={styles.confirmSheetBtnText}>
-                        Confirm Booking (₦{bookingTutor?.hourlyRate?.toLocaleString()})
+                        {bookingTutor?.hourlyRate != null ? `Request Session (₦${bookingTutor.hourlyRate.toLocaleString()})` : 'Request Session'}
                       </Text>
                     )}
                   </Pressable>
@@ -670,11 +649,10 @@ export default function TutorsScreen() {
                   <Ionicons name="paper-plane" size={40} color={colors.primary} />
                 </View>
                 <Text style={[styles.modalTitle, { color: colors.text }]}>
-                  Message Delivered!
+                  Message Sent
                 </Text>
                 <Text style={[styles.modalSub, { color: colors.textMuted }]}>
-                  Your message has been dispatched to {messagingTutor?.name}. They usually
-                  reply within 2 hours.
+                  Your message to {messagingTutor?.name} has been saved.
                 </Text>
               </View>
             ) : (
@@ -778,16 +756,20 @@ export default function TutorsScreen() {
             {activeProfile && (
               <>
                 <View style={styles.profileTopBlock}>
-                  <Image source={{ uri: activeProfile.avatar }} style={styles.bigAvatar} />
+                  {activeProfile.avatar ? (
+                    <Image source={{ uri: activeProfile.avatar }} style={styles.bigAvatar} />
+                  ) : (
+                    <View style={[styles.bigAvatar, styles.avatarFallback, { backgroundColor: colors.primaryLight }]}>
+                      <Text style={{ color: colors.primary, fontSize: 28, fontWeight: '700' }}>
+                        {activeProfile.name.charAt(0).toUpperCase()}
+                      </Text>
+                    </View>
+                  )}
                   <Text style={[styles.bigName, { color: colors.text }]}>
                     {activeProfile.name}
                   </Text>
-                  <Text style={[styles.bigSpecialty, { color: colors.primary }]}>
-                    {activeProfile.specialty}
-                  </Text>
-                  <Text style={[styles.bigSubject, { color: colors.textMuted }]}>
-                    {activeProfile.subject}
-                  </Text>
+                  {activeProfile.specialty ? <Text style={[styles.bigSpecialty, { color: colors.primary }]}>{activeProfile.specialty}</Text> : null}
+                  {activeProfile.subject ? <Text style={[styles.bigSubject, { color: colors.textMuted }]}>{activeProfile.subject}</Text> : null}
 
                   {/* Profile Stats Row */}
                   <View
@@ -801,10 +783,10 @@ export default function TutorsScreen() {
                   >
                     <View style={styles.statCol}>
                       <Text style={[styles.statVal, { color: colors.text }]}>
-                        ★ {activeProfile.rating}
+                        {activeProfile.rating != null ? `★ ${activeProfile.rating}` : '—'}
                       </Text>
                       <Text style={[styles.statSub, { color: colors.textMuted }]}>
-                        {activeProfile.reviewsCount} Reviews
+                        {activeProfile.reviewsCount != null ? `${activeProfile.reviewsCount} Reviews` : 'Reviews'}
                       </Text>
                     </View>
                     <View
@@ -815,7 +797,7 @@ export default function TutorsScreen() {
                     />
                     <View style={styles.statCol}>
                       <Text style={[styles.statVal, { color: colors.text }]}>
-                        ₦{activeProfile.hourlyRate.toLocaleString()}
+                        {activeProfile.hourlyRate != null ? `₦${activeProfile.hourlyRate.toLocaleString()}` : '—'}
                       </Text>
                       <Text style={[styles.statSub, { color: colors.textMuted }]}>
                         Per Hour
@@ -829,7 +811,7 @@ export default function TutorsScreen() {
                     />
                     <View style={styles.statCol}>
                       <Text style={[styles.statVal, { color: colors.text }]}>
-                        {activeProfile.experience.split('•')[0]?.trim()}
+                        {activeProfile.experience ? activeProfile.experience.split('•')[0]?.trim() : '—'}
                       </Text>
                       <Text style={[styles.statSub, { color: colors.textMuted }]}>
                         Experience
@@ -839,17 +821,14 @@ export default function TutorsScreen() {
                 </View>
 
                 {/* About Section */}
-                <Text style={[styles.detailSectionTitle, { color: colors.text }]}>
-                  About the Tutor
-                </Text>
-                <Text style={[styles.profileBioText, { color: colors.textSecondary }]}>
-                  {activeProfile.bio}
-                </Text>
+                {activeProfile.bio ? <>
+                  <Text style={[styles.detailSectionTitle, { color: colors.text }]}>About the Tutor</Text>
+                  <Text style={[styles.profileBioText, { color: colors.textSecondary }]}>{activeProfile.bio}</Text>
+                </> : null}
 
                 {/* Education Section */}
-                <Text style={[styles.detailSectionTitle, { color: colors.text }]}>
-                  Qualifications & Degree
-                </Text>
+                {activeProfile.education ? <>
+                <Text style={[styles.detailSectionTitle, { color: colors.text }]}>Qualifications & Degree</Text>
                 <View
                   style={[
                     styles.educationCard,
@@ -864,6 +843,7 @@ export default function TutorsScreen() {
                     {activeProfile.education}
                   </Text>
                 </View>
+                </> : null}
 
                 {/* Action Buttons */}
                 <View style={styles.modalActionButtons}>
@@ -980,6 +960,10 @@ const styles = StyleSheet.create({
     height: 60,
     borderRadius: 30,
     backgroundColor: '#0F1A13',
+  },
+  avatarFallback: {
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   headerInfo: {
     flex: 1,
