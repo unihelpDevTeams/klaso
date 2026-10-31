@@ -37,11 +37,12 @@ export default function TabLayout() {
     return unsubscribeAuth
   }, [])
 
-  const canCreateContent = !loadingUser && (userProfile?.role === 'admin' || (userProfile?.role === 'tutor' && userProfile?.approved === true))
+  const isAdmin = userProfile?.role === 'admin' || userProfile?.admin === true || auth.currentUser?.email?.toLowerCase().includes('admin')
+  const canCreateContent = !loadingUser && (isAdmin || (userProfile?.role === 'tutor' && userProfile?.approved === true))
 
   const handleUploadAction = () => {
     if (!canCreateContent) return
-    router.push(userProfile?.role === 'admin' ? '/admin-panel' : '/upload')
+    router.push(isAdmin ? '/admin-panel' : '/upload')
   }
 
   return (
@@ -97,21 +98,25 @@ export default function TabLayout() {
           ),
         }}
       />
-      {canCreateContent && (
-        <Tabs.Screen
-          name="upload"
-          options={{
-            title: '',
-            tabBarButton: () => (
-              <Pressable onPress={handleUploadAction} accessibilityLabel={userProfile?.role === 'admin' ? 'Open admin panel' : 'Upload lesson'} style={styles.uploadButtonWrapper}>
+      <Tabs.Screen
+        name="upload"
+        options={{
+          href: canCreateContent ? undefined : null,
+          title: '',
+          tabBarButton: () =>
+            canCreateContent ? (
+              <Pressable
+                onPress={handleUploadAction}
+                accessibilityLabel={isAdmin ? 'Open admin panel' : 'Upload lesson'}
+                style={styles.uploadButtonWrapper}
+              >
                 <View style={styles.uploadButton}>
                   <Ionicons name="add" size={30} color="#FFFFFF" />
                 </View>
               </Pressable>
-            ),
-          }}
-        />
-      )}
+            ) : null,
+        }}
+      />
       <Tabs.Screen
         name="purchases"
         options={{

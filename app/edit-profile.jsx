@@ -60,6 +60,9 @@ export default function EditProfileScreen() {
 
   async function uploadAvatar() {
     if (!avatarUri) return { url: '', publicId: '', resourceType: 'image' }
+    if (avatarUri.startsWith('http://') || avatarUri.startsWith('https://')) {
+      return { url: avatarUri, publicId: userProfile?.avatarPublicId || '', resourceType: 'image' }
+    }
 
     const filename = avatarUri.split('/').pop() || `avatar-${Date.now()}.jpg`
     const formData = new FormData()

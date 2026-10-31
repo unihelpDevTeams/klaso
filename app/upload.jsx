@@ -62,6 +62,9 @@ export default function UploadScreen() {
 
   async function uploadToCloudinary() {
     if (!thumbnailUri) return { url: '', publicId: '', resourceType: 'image' }
+    if (thumbnailUri.startsWith('http://') || thumbnailUri.startsWith('https://')) {
+      return { url: thumbnailUri, publicId: '', resourceType: 'image' }
+    }
 
     const localUri = thumbnailUri
     const filename = localUri.split('/').pop() || `thumbnail-${Date.now()}.jpg`
