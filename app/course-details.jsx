@@ -1,4 +1,5 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
+import * as WebBrowser from 'expo-web-browser'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import {
   addDoc,
@@ -27,6 +28,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../firebase/config'
 import { useTheme } from '../context/ThemeContext'
+import { checkTutorialPurchase, initializePayment } from '../services/paymentService'
 
 export default function CourseDetailsScreen() {
   const router = useRouter()
@@ -40,6 +42,8 @@ export default function CourseDetailsScreen() {
   const [activeTab, setActiveTab] = useState('overview')
   const [isBookmarked, setIsBookmarked] = useState(false)
   const [savingBookmark, setSavingBookmark] = useState(false)
+  const [purchaseStatus, setPurchaseStatus] = useState({ checking: true, purchased: false, hasAccess: false })
+  const [processingPayment, setProcessingPayment] = useState(false)
 
   useEffect(() => {
     let active = true
@@ -97,6 +101,26 @@ export default function CourseDetailsScreen() {
         }
 
         if (!active) return
+
+        if (auth.currentUser) {
+          try {
+            const purchaseResult = await checkTutorialPurchase(courseId)
+            if (active) {
+              setPurchaseStatus({
+                checking: false,
+                purchased: Boolean(purchaseResult.purchased || purchaseResult.hasAccess),
+                hasAccess: Boolean(purchaseResult.hasAccess || purchaseResult.purchased),
+              })
+            }
+          } catch (error) {
+            console.error('Unable to check purchase status:', error)
+            if (active) {
+              setPurchaseStatus({ checking: false, purchased: false, hasAccess: false })
+            }
+          }
+        } else if (active) {
+          setPurchaseStatus({ checking: false, purchased: false, hasAccess: false })
+        }
 
         const tutor =
           typeof data.tutor === 'string'
@@ -229,23 +253,66 @@ export default function CourseDetailsScreen() {
     }
   }
 
-  const handleEnroll = () => {
+  const refreshPurchaseState = async () => {
+    if (!courseId || !auth.currentUser) {
+      setPurchaseStatus({ checking: false, purchased: false, hasAccess: false })
+      return
+    }
+
+    try {
+      const result = await checkTutorialPurchase(courseId)
+      setPurchaseStatus({ checking: false, purchased: Boolean(result.purchased || result.hasAccess), hasAccess: Boolean(result.hasAccess || result.purchased) })
+    } catch (error) {
+      setPurchaseStatus({ checking: false, purchased: false, hasAccess: false })
+      console.error('Unable to refresh purchase state:', error)
+    }
+  }
+
+  const handleEnroll = async () => {
     if (!course) return
+    if (!auth.currentUser) {
+      Alert.alert('Sign In Required', 'Please sign in to purchase this tutorial.')
+      return
+    }
+
+    if (purchaseStatus.purchased) {
+      router.push({
+        pathname: '/screens/lesson',
+        params: { courseId: course.id, title: course.title, videoUrl: course.videoUrl },
+      })
+      return
+    }
+
     if (typeof course.price !== 'number' || course.price < 0) {
       Alert.alert('Price unavailable', 'The tutor has not set a price for this course yet.')
       return
     }
 
-    router.push({
-      pathname: '/checkout',
-      params: {
-        id: course.id,
-        title: course.title,
-        price: course.price,
-        tutor: course.tutor?.name || course.tutor,
-        subject: course.subject,
-      },
-    })
+    if (processingPayment) return
+    setProcessingPayment(true)
+
+    try {
+      const result = await initializePayment(course.id)
+      if (!result.checkoutUrl) {
+        throw new Error('Flutterwave did not return a checkout link.')
+      }
+
+      await WebBrowser.openBrowserAsync(result.checkoutUrl, {
+        showInRecents: true,
+        controlsColor: colors.primary,
+        toolbarColor: '#0B110D',
+      })
+
+      Alert.alert(
+        'Checkout opened',
+        'Complete the payment in your browser, then return to Klaso. We will verify the payment before unlocking access.'
+      )
+      await refreshPurchaseState()
+    } catch (error) {
+      Alert.alert('Payment unavailable', error.message || 'Unable to start payment flow.')
+    } finally {
+      setProcessingPayment(false)
+    }
   }
 
   if (loading) {
@@ -598,7 +665,7 @@ export default function CourseDetailsScreen() {
                               videoUrl: mod.videoUrl || course.videoUrl,
                             },
                           })
-                        } else if (canEnroll) {
+                        } else if (purchaseStatus.purchased || canEnroll) {
                           handleEnroll()
                         } else {
                           Alert.alert('Lesson unavailable', 'This course does not have a price or an accessible preview yet.')
@@ -684,16 +751,18 @@ export default function CourseDetailsScreen() {
         </View>
 
         <Pressable
-          accessibilityState={{ disabled: !canEnroll }}
-          disabled={!canEnroll}
+          accessibilityState={{ disabled: !canEnroll && !purchaseStatus.purchased || processingPayment }}
+          disabled={(!canEnroll && !purchaseStatus.purchased) || processingPayment}
           style={[
             styles.enrollButton,
-            { backgroundColor: colors.primary, opacity: canEnroll ? 1 : 0.55 },
+            { backgroundColor: colors.primary, opacity: (canEnroll || purchaseStatus.purchased) && !processingPayment ? 1 : 0.55 },
           ]}
           onPress={handleEnroll}
         >
-          <Text style={styles.enrollButtonText}>{canEnroll ? 'Enroll Now' : 'Unavailable'}</Text>
-          {canEnroll && <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />}
+          <Text style={styles.enrollButtonText}>
+            {processingPayment ? 'Processing...' : purchaseStatus.purchased ? 'Open Tutorial' : canEnroll ? 'Buy Tutorial' : 'Unavailable'}
+          </Text>
+          {canEnroll || purchaseStatus.purchased ? <Ionicons name="arrow-forward" size={18} color="#FFFFFF" /> : null}
         </Pressable>
       </View>
     </SafeAreaView>

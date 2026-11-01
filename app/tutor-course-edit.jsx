@@ -17,6 +17,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import Header from './components/header'
 import { auth, db } from '../firebase/config'
 import { useTheme } from '../context/ThemeContext'
+import { deleteTutorTutorial } from '../services/tutorialService'
 
 export default function TutorCourseEditScreen() {
   const router = useRouter()
@@ -34,6 +35,8 @@ export default function TutorCourseEditScreen() {
   const [lessonId, setLessonId] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [courseLoaded, setCourseLoaded] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -71,6 +74,7 @@ export default function TutorCourseEditScreen() {
             duration: String(course.duration || lesson?.duration || ''),
             price: String(course.price ?? lesson?.price ?? ''),
           })
+          setCourseLoaded(true)
         }
       } catch (loadError) {
         console.error('Unable to load tutorial for editing:', loadError)
@@ -142,6 +146,39 @@ export default function TutorCourseEditScreen() {
     }
   }
 
+  const confirmDeleteTutorial = () => {
+    if (!courseLoaded || saving || deleting) return
+
+    Alert.alert(
+      'Delete tutorial?',
+      'This permanently removes the tutorial, its lessons, and their Cloudflare R2 media. Tutorials with a purchase cannot be deleted.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete tutorial',
+          style: 'destructive',
+          onPress: async () => {
+            setDeleting(true)
+            setError('')
+            try {
+              const result = await deleteTutorTutorial(courseId)
+              Alert.alert(
+                'Tutorial deleted',
+                `Tutorial removed. ${result.deletedMediaCount} media file${result.deletedMediaCount === 1 ? '' : 's'} deleted from Cloudflare R2.`
+              )
+              router.back()
+            } catch (deleteError) {
+              console.error('Unable to delete tutorial:', deleteError)
+              setError(deleteError.message || 'Unable to delete this tutorial. Please try again.')
+            } finally {
+              setDeleting(false)
+            }
+          },
+        },
+      ]
+    )
+  }
+
   const fields = [
     { key: 'title', label: 'Tutorial title', placeholder: 'For example, Introduction to Algebra' },
     { key: 'description', label: 'Description', placeholder: 'What will learners study?', multiline: true },
@@ -197,9 +234,9 @@ export default function TutorCourseEditScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ disabled: saving }}
-            disabled={saving}
+            disabled={saving || deleting}
             onPress={saveChanges}
-            style={[styles.saveButton, { backgroundColor: colors.primary, opacity: saving ? 0.7 : 1 }]}
+          style={[styles.saveButton, { backgroundColor: colors.primary, opacity: saving || deleting ? 0.7 : 1 }]}
           >
             {saving ? (
               <ActivityIndicator color="#FFFFFF" />
@@ -210,6 +247,25 @@ export default function TutorCourseEditScreen() {
               </>
             )}
           </Pressable>
+
+          {courseLoaded ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: saving || deleting }}
+              disabled={saving || deleting}
+              onPress={confirmDeleteTutorial}
+              style={[styles.deleteButton, { borderColor: colors.danger, opacity: saving || deleting ? 0.6 : 1 }]}
+            >
+              {deleting ? (
+                <ActivityIndicator color={colors.danger} />
+              ) : (
+                <>
+                  <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                  <Text style={[styles.deleteButtonText, { color: colors.danger }]}>Delete tutorial</Text>
+                </>
+              )}
+            </Pressable>
+          ) : null}
         </ScrollView>
       )}
     </SafeAreaView>
@@ -249,4 +305,15 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   saveButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  deleteButton: {
+    alignItems: 'center',
+    borderRadius: 13,
+    borderWidth: 1,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    minHeight: 48,
+    marginTop: 12,
+  },
+  deleteButtonText: { fontSize: 14, fontWeight: '700' },
 })

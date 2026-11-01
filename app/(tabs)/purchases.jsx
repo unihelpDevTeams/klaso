@@ -86,15 +86,15 @@ export default function PurchasesScreen() {
         })))
       })
 
-      const qTransactions = query(
-        collection(db, 'transactions'),
-        where('userId', '==', user.uid)
-      )
+      const qTransactions = collection(db, 'transactions')
       unsubTransactions = onSnapshot(qTransactions, (snapshot) => {
-        setPurchaseHistory(snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-        })))
+        const items = snapshot.docs
+          .map((docSnap) => ({
+            id: docSnap.id,
+            ...docSnap.data(),
+          }))
+          .filter((item) => item.studentId === user.uid || item.userId === user.uid)
+        setPurchaseHistory(items)
       })
     })
 

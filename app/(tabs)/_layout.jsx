@@ -4,7 +4,6 @@ import { onIdTokenChanged } from 'firebase/auth'
 import { doc, onSnapshot } from 'firebase/firestore'
 import React, { useEffect, useState } from 'react'
 import { useTheme } from '../../context/ThemeContext'
-import { verifyAdminAccess } from '../../firebase/adminAccess'
 import { auth, db } from '../../firebase/config'
 
 export default function TabLayout() {
@@ -22,23 +21,15 @@ export default function TabLayout() {
 
       if (!user) return
 
-      verifyAdminAccess(user)
-        .then(({ isAdmin }) => {
-          if (currentChangeId === authChangeId) {
-            setCanCreateLessons(isAdmin)
-          }
-        })
-        .catch((error) => {
-          console.error('Unable to verify admin access:', error)
-        })
-
       unsubscribeProfile = onSnapshot(
         doc(db, 'users', user.uid),
         (snapshot) => {
           const userProfile = snapshot.data()
           const isApprovedTutor =
             userProfile?.role === 'tutor' && userProfile?.approved === true
-          setCanCreateLessons((isAdmin) => isAdmin || isApprovedTutor)
+          if (currentChangeId === authChangeId) {
+            setCanCreateLessons(isApprovedTutor)
+          }
         },
         (error) => {
           console.error('Unable to verify creator access:', error)
@@ -108,7 +99,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="upload"
         options={{
-          title: 'Creator',
+          title: 'Create',
           href: canCreateLessons ? undefined : null,
           tabBarIcon: ({ color, size, focused }) => (
             <Ionicons name={focused ? 'add-circle' : 'add-circle-outline'} size={size + 2} color={color} />

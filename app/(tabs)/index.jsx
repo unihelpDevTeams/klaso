@@ -810,14 +810,24 @@ export default function Home() {
           title="Tutor studio"
           subtitle="Manage your tutorials and track performance"
           rightContent={
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Create a tutorial"
-              onPress={() => router.push('/upload')}
-              style={[styles.tutorHeaderAction, { backgroundColor: colors.primary }]}
-            >
-              <Ionicons name="add" size={22} color="#FFFFFF" />
-            </Pressable>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Open wallet"
+                onPress={() => router.push('/wallet')}
+                style={[styles.tutorHeaderAction, { backgroundColor: colors.primaryLight }]}
+              >
+                <Ionicons name="wallet-outline" size={20} color={colors.primary} />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Create a tutorial"
+                onPress={() => router.push('/upload')}
+                style={[styles.tutorHeaderAction, { backgroundColor: colors.primary }]}
+              >
+                <Ionicons name="add" size={22} color="#FFFFFF" />
+              </Pressable>
+            </View>
           }
         />
         <FlatList
@@ -1003,7 +1013,7 @@ export default function Home() {
           setSearchQuery('')
         }}
         onSearchPress={() => setShowSearch(true)}
-        onNotificationPress={() => {}}
+        onNotificationPress={() => router.push('/notifications')}
         searchPlaceholder="Search courses, tutors, topics"
       />
 

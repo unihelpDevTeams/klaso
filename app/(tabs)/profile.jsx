@@ -29,7 +29,6 @@ export default function Profile() {
   const [adminVerificationMessage, setAdminVerificationMessage] = useState('')
   const [refreshingAdminAccess, setRefreshingAdminAccess] = useState(false)
   const [resendingAdminVerification, setResendingAdminVerification] = useState(false)
-  const [simulatedRole, setSimulatedRole] = useState(null) // Allows admin to test other roles
 
   useEffect(() => {
     let unsubscribeProfile = () => {}
@@ -93,15 +92,10 @@ export default function Profile() {
     }
   }, [])
 
-  const currentRole =
-    simulatedRole ||
-    (isConfiguredAdmin ? 'admin' : userProfile?.role === 'tutor' ? 'tutor' : 'student')
   const isRealAdmin = isConfiguredAdmin
-
-  const isTutor = currentRole === 'tutor'
+  const isTutor = userProfile?.role === 'tutor'
   const isApproved = userProfile?.approved === true || isRealAdmin
-  const canCreateLessons =
-    isRealAdmin || (userProfile?.role === 'tutor' && userProfile?.approved === true)
+  const canCreateLessons = isRealAdmin || (isTutor && userProfile?.approved === true)
 
   const refreshAdminAccess = async () => {
     const user = auth.currentUser
@@ -437,6 +431,26 @@ export default function Profile() {
           )}
         </View>
 
+        {!isTutor && !isRealAdmin && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Become a tutor"
+            onPress={() => router.push('/become-tutor')}
+            style={[styles.tutorApplicationCard, { backgroundColor: colors.primaryDark }]}
+          >
+            <View style={styles.tutorApplicationIcon}>
+              <Ionicons name="easel-outline" size={22} color="#FFFFFF" />
+            </View>
+            <View style={styles.tutorApplicationCopy}>
+              <Text style={styles.tutorApplicationTitle}>Become a tutor</Text>
+              <Text style={styles.tutorApplicationSubtitle}>
+                Apply to teach and share your expertise with learners.
+              </Text>
+            </View>
+            <Ionicons name="arrow-forward" size={19} color="#FFFFFF" />
+          </Pressable>
+        )}
+
         {/* APPEARANCE / THEME TOGGLE CARD */}
         <View
           style={[
@@ -597,54 +611,6 @@ export default function Profile() {
               </View>
               <Ionicons name="chevron-forward" size={18} color="#FFFFFF" />
             </Pressable>
-
-            {/* Role Switcher for Admins */}
-            <View style={styles.roleTesterCard}>
-              <Text style={[styles.roleTesterLabel, { color: isDark ? '#C4B5FD' : '#6B21A8' }]}>
-                Test App View Mode:
-              </Text>
-              <View style={styles.testerPillsRow}>
-                <Pressable
-                  style={[
-                    styles.testerPill,
-                    currentRole === 'student' && styles.testerPillActive,
-                    { borderColor: isDark ? '#6B21A8' : '#D8B4FE', backgroundColor: isDark ? '#151025' : '#FFFFFF' },
-                  ]}
-                  onPress={() => setSimulatedRole('student')}
-                >
-                  <Text
-                    style={[
-                      styles.testerPillText,
-                      currentRole === 'student' && styles.testerPillTextActive,
-                    ]}
-                  >
-                    Student Mode
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.testerPill,
-                    currentRole === 'tutor' && styles.testerPillActive,
-                    { borderColor: isDark ? '#6B21A8' : '#D8B4FE', backgroundColor: isDark ? '#151025' : '#FFFFFF' },
-                  ]}
-                  onPress={() => setSimulatedRole('tutor')}
-                >
-                  <Text
-                    style={[
-                      styles.testerPillText,
-                      currentRole === 'tutor' && styles.testerPillTextActive,
-                    ]}
-                  >
-                    Tutor Mode
-                  </Text>
-                </Pressable>
-                {simulatedRole && (
-                  <Pressable style={styles.resetPill} onPress={() => setSimulatedRole(null)}>
-                    <Text style={styles.resetPillText}>Reset</Text>
-                  </Pressable>
-                )}
-              </View>
-            </View>
           </View>
         )}
 
@@ -697,26 +663,6 @@ export default function Profile() {
             </Pressable>
           )}
 
-          {!isTutor && !isRealAdmin && (
-            <Pressable
-              style={[styles.menuRow, { borderBottomColor: colors.borderSubtle }]}
-              onPress={() => router.push('/become-tutor')}
-            >
-              <View
-                style={[
-                  styles.menuIconWrap,
-                  { backgroundColor: isDark ? '#1C2920' : '#F5FAF5' },
-                ]}
-              >
-                <Ionicons name="easel-outline" size={20} color={colors.primary} />
-              </View>
-              <Text style={[styles.menuLabel, { color: colors.text }]}>
-                Switch to Tutor Account
-              </Text>
-              <Ionicons name="chevron-forward" size={18} color={colors.textMuted} />
-            </Pressable>
-          )}
-
           <Pressable
             style={[styles.menuRow, { borderBottomColor: colors.borderSubtle }]}
             onPress={() => router.push('/(tabs)/purchases')}
@@ -737,9 +683,7 @@ export default function Profile() {
 
           <Pressable
             style={[styles.menuRow, { borderBottomColor: colors.borderSubtle }]}
-            onPress={() =>
-              Alert.alert('Notifications', 'All your course notifications are up to date.')
-            }
+            onPress={() => router.push('/notifications')}
           >
             <View
               style={[
@@ -795,7 +739,7 @@ export default function Profile() {
         </Pressable>
 
         <Text style={[styles.versionText, { color: colors.textMuted }]}>
-          Klaso Mobile v1.0.0 • Triple-tap avatar for Admin
+          Klaso Mobile v1.0.0 • 
         </Text>
       </ScrollView>
     </SafeAreaView>
@@ -992,6 +936,27 @@ const styles = StyleSheet.create({
   themeBtnText: {
     fontSize: 13,
   },
+
+  tutorApplicationCard: {
+    alignItems: 'center',
+    borderRadius: 14,
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 16,
+    minHeight: 82,
+    padding: 14,
+  },
+  tutorApplicationIcon: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderRadius: 11,
+    height: 42,
+    justifyContent: 'center',
+    width: 42,
+  },
+  tutorApplicationCopy: { flex: 1 },
+  tutorApplicationTitle: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  tutorApplicationSubtitle: { color: '#DDEBE1', fontSize: 12, lineHeight: 17, marginTop: 3 },
 
   adminSection: {
     borderRadius: 16,

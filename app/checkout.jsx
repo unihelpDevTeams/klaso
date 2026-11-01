@@ -1,9 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import React from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { Alert, Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useTheme } from '../context/ThemeContext'
+import { verifyPayment } from '../services/paymentService'
 
 export default function CheckoutScreen() {
   const router = useRouter()
@@ -15,7 +16,36 @@ export default function CheckoutScreen() {
   const tutor = typeof params.tutor === 'string' ? params.tutor : ''
   const subject = typeof params.subject === 'string' ? params.subject : ''
   const price = typeof params.price === 'string' ? Number(params.price) : NaN
+  const txRef = useMemo(
+    () => typeof params.tx_ref === 'string' ? params.tx_ref : typeof params.reference === 'string' ? params.reference : typeof params.txRef === 'string' ? params.txRef : '',
+    [params]
+  )
+  const [verificationState, setVerificationState] = useState({ loading: Boolean(txRef), verified: false, error: '' })
   const courseIsValid = Boolean(courseId && title && Number.isFinite(price) && price >= 0)
+
+  useEffect(() => {
+    if (!txRef) return
+
+    let active = true
+    const runVerification = async () => {
+      try {
+        const result = await verifyPayment(txRef)
+        if (!active) return
+        setVerificationState({ loading: false, verified: Boolean(result.verified || result.ok), error: '' })
+        if (result.verified) {
+          Alert.alert('Payment verified', 'Your tutorial access has been unlocked.')
+        }
+      } catch (error) {
+        if (!active) return
+        setVerificationState({ loading: false, verified: false, error: error.message || 'Unable to verify your payment yet.' })
+      }
+    }
+
+    runVerification()
+    return () => {
+      active = false
+    }
+  }, [txRef])
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
@@ -44,7 +74,13 @@ export default function CheckoutScreen() {
             <View style={[styles.notice, { backgroundColor: colors.card, borderColor: colors.border }]}>
               <Ionicons name="information-circle-outline" size={21} color={colors.textMuted} />
               <Text style={[styles.noticeText, { color: colors.textMuted }]}>
-                Payments are not configured. You will not be charged or enrolled from this screen.
+                {verificationState.loading
+                  ? 'Verifying your payment securely before unlocking access…'
+                  : verificationState.verified
+                    ? 'Payment verified successfully. Your tutorial is now unlocked.'
+                    : verificationState.error
+                      ? verificationState.error
+                      : 'Return to Klaso after your payment is completed to finish verification.'}
               </Text>
             </View>
           </>
@@ -67,13 +103,21 @@ export default function CheckoutScreen() {
           </Text>
         </View>
         <Pressable
-          disabled
           accessibilityRole="button"
-          accessibilityState={{ disabled: true }}
-          onPress={() => Alert.alert('Payments Unavailable', 'No payment or enrollment has been created.')}
-          style={[styles.payButton, { backgroundColor: colors.textMuted }]}
+          accessibilityState={{ disabled: verificationState.loading }}
+          disabled={verificationState.loading}
+          onPress={() => {
+            if (txRef) {
+              router.replace({ pathname: '/course-details', params: { id: courseId, title } })
+              return
+            }
+            router.back()
+          }}
+          style={[styles.payButton, { backgroundColor: verificationState.loading ? colors.textMuted : colors.primary }]}
         >
-          <Text style={styles.payButtonText}>Payments unavailable</Text>
+          <Text style={styles.payButtonText}>
+            {verificationState.loading ? 'Verifying...' : txRef ? 'Return to course' : 'Back'}
+          </Text>
         </Pressable>
       </View>
     </SafeAreaView>

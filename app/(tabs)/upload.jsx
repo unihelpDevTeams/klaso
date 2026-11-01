@@ -6,7 +6,6 @@ import React, { useEffect, useState } from 'react'
 import { ActivityIndicator, Pressable, StatusBar, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../../firebase/config'
-import { verifyAdminAccess } from '../../firebase/adminAccess'
 import { useTheme } from '../../context/ThemeContext'
 import Header from '../components/header'
 import UploadScreen from '../upload'
@@ -16,32 +15,18 @@ export default function TabUploadScreen() {
   const { colors, isDark } = useTheme()
   const [userProfile, setUserProfile] = useState(null)
   const [loading, setLoading] = useState(true)
-  const [isConfiguredAdmin, setIsConfiguredAdmin] = useState(false)
 
   useEffect(() => {
     let unsubscribeProfile = () => {}
-    let authChangeId = 0
 
     const unsubscribe = onIdTokenChanged(auth, (user) => {
-      const currentChangeId = ++authChangeId
       unsubscribeProfile()
-      setIsConfiguredAdmin(false)
 
       if (!user) {
         setUserProfile(null)
         setLoading(false)
         return
       }
-
-      verifyAdminAccess(user)
-        .then(({ isAdmin }) => {
-          if (currentChangeId === authChangeId) {
-            setIsConfiguredAdmin(isAdmin)
-          }
-        })
-        .catch((error) => {
-          console.error('Unable to verify admin access:', error)
-        })
 
       const userRef = doc(db, 'users', user.uid)
       unsubscribeProfile = onSnapshot(
@@ -64,7 +49,6 @@ export default function TabUploadScreen() {
     }
   }, [])
 
-  const isAdmin = isConfiguredAdmin
   const isApprovedTutor =
     userProfile?.role === 'tutor' && userProfile?.approved === true
 
@@ -78,8 +62,8 @@ export default function TabUploadScreen() {
     )
   }
 
-  // If approved tutor or admin, show full upload studio
-  if (isApprovedTutor || isAdmin) {
+  // Only approved tutors can upload tutorials.
+  if (isApprovedTutor) {
     return <UploadScreen />
   }
 

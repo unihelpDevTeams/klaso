@@ -1,6 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useRouter } from 'expo-router'
-import { doc, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import React, { useState } from 'react'
 import {
   ActivityIndicator,
@@ -17,11 +17,10 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../firebase/config'
 import { useTheme } from '../context/ThemeContext'
 
-const tutorBenefits = [
-  'Set your own hourly teaching rates in Naira',
-  'Publish video lessons & curriculum courses to the marketplace',
-  'Earn from student bookings and live 1-on-1 tutoring sessions',
-  'Receive verified educator badge upon admin verification',
+const applicationSteps = [
+  'Complete your teaching profile',
+  'Submit it for administrator review',
+  'Once approved, appear in tutor discovery',
 ]
 
 export default function BecomeTutorScreen() {
@@ -33,44 +32,67 @@ export default function BecomeTutorScreen() {
   const [hourlyRate, setHourlyRate] = useState('')
   const [bio, setBio] = useState('')
   const [submitting, setSubmitting] = useState(false)
+  const [errors, setErrors] = useState({})
+  const [submitError, setSubmitError] = useState('')
 
   const handleSubmitApplication = async () => {
     if (!auth.currentUser) {
-      Alert.alert('Sign In Required', 'Please sign in first to submit a tutor application.')
+      setSubmitError('Sign in before submitting your tutor application.')
       return
     }
 
     const parsedHourlyRate = Number(hourlyRate)
-    if (!subject.trim() || !bio.trim() || !Number.isFinite(parsedHourlyRate) || parsedHourlyRate <= 0) {
-      Alert.alert('Incomplete Form', 'Please provide your teaching subject, bio, and a valid hourly rate.')
+    const nextErrors = {
+      subject: subject.trim() ? '' : 'Enter the subject you teach.',
+      hourlyRate: Number.isFinite(parsedHourlyRate) && parsedHourlyRate > 0 ? '' : 'Enter a valid hourly rate.',
+      bio: bio.trim().length >= 20 ? '' : 'Write at least 20 characters about your teaching experience.',
+    }
+    setErrors(nextErrors)
+    setSubmitError('')
+    if (Object.values(nextErrors).some(Boolean)) {
       return
     }
 
     setSubmitting(true)
     try {
       const userRef = doc(db, 'users', auth.currentUser.uid)
+      const profileSnapshot = await getDoc(userRef)
+      if (!profileSnapshot.exists()) {
+        throw new Error('Your account profile could not be found. Sign out and sign in again, then retry.')
+      }
+
+      const existingProfile = profileSnapshot.data()
+      if (existingProfile.role === 'tutor') {
+        Alert.alert(
+          'Application Already Submitted',
+          existingProfile.approved ? 'Your tutor profile is already active.' : 'Your application is already under review.',
+          [{ text: 'OK', onPress: () => router.replace('/(tabs)/profile') }]
+        )
+        return
+      }
+      if (existingProfile.role && existingProfile.role !== 'student') {
+        throw new Error('Only student accounts can submit a tutor application.')
+      }
+
       await updateDoc(userRef, {
         role: 'tutor',
-        approved: false, // Pending admin review
+        approved: false,
         subject: subject.trim(),
         education: education.trim(),
         hourlyRate: parsedHourlyRate,
         bio: bio.trim(),
         appliedAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       })
 
       Alert.alert(
-        'Application Submitted! 🎉',
-        'Your educator registration has been sent to the Klaso admin team for review. You can track your status in your Profile tab.',
+        'Application submitted',
+        'Your profile is now awaiting administrator review. You can check its status on your profile.',
         [{ text: 'OK', onPress: () => router.replace('/(tabs)/profile') }]
       )
     } catch (err) {
       console.log('Error submitting tutor application:', err)
-      Alert.alert(
-        'Application Received',
-        'Your application has been recorded. Admin will review your profile shortly.',
-        [{ text: 'OK', onPress: () => router.replace('/(tabs)/profile') }]
-      )
+      setSubmitError(err.message || 'Unable to submit your application. Please try again.')
     } finally {
       setSubmitting(false)
     }
@@ -92,7 +114,7 @@ export default function BecomeTutorScreen() {
           >
             <Ionicons name="arrow-back" size={22} color={colors.text} />
           </Pressable>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Apply to Teach</Text>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Tutor application</Text>
           <View style={styles.placeholder} />
         </View>
 
@@ -102,12 +124,15 @@ export default function BecomeTutorScreen() {
             { backgroundColor: colors.card, borderColor: colors.border },
           ]}
         >
-          <Text style={[styles.eyebrow, { color: colors.primary }]}>Join Klaso Faculty</Text>
+          <Text style={[styles.eyebrow, { color: colors.primary }]}>Teach on Klaso</Text>
           <Text style={[styles.title, { color: colors.text }]}>
-            Share your expertise and grow your teaching income.
+            Share what you know.
+          </Text>
+          <Text style={[styles.heroDescription, { color: colors.textSecondary }]}>
+            Create a tutor profile for review. Approved tutors can be discovered by learners.
           </Text>
 
-          {tutorBenefits.map((item) => (
+          {applicationSteps.map((item, index) => (
             <View key={item} style={styles.benefitRow}>
               <View
                 style={[
@@ -115,7 +140,7 @@ export default function BecomeTutorScreen() {
                   { backgroundColor: isDark ? '#14331C' : '#DCFCE7' },
                 ]}
               >
-                <Ionicons name="checkmark" size={16} color={colors.primary} />
+                <Text style={[styles.stepNumber, { color: colors.primary }]}>{index + 1}</Text>
               </View>
               <Text style={[styles.benefitText, { color: colors.textSecondary }]}>
                 {item}
@@ -135,27 +160,31 @@ export default function BecomeTutorScreen() {
           </Text>
 
           <View style={styles.fieldGroup}>
-            <Text style={[styles.label, { color: colors.text }]}>Subject Area</Text>
+            <Text style={[styles.label, { color: colors.text }]}>Main subject</Text>
             <TextInput
-              placeholder="e.g. Mathematics, Biology, English, Coding"
+              placeholder="For example, Mathematics or Biology"
               placeholderTextColor={colors.textMuted}
               style={[
                 styles.input,
                 {
                   backgroundColor: colors.inputBg,
-                  borderColor: colors.border,
+                  borderColor: errors.subject ? colors.danger : colors.border,
                   color: colors.text,
                 },
               ]}
               value={subject}
-              onChangeText={setSubject}
+              onChangeText={(value) => {
+                setSubject(value)
+                setErrors((current) => ({ ...current, subject: '' }))
+              }}
             />
+            {errors.subject ? <Text style={[styles.fieldError, { color: colors.danger }]}>{errors.subject}</Text> : null}
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={[styles.label, { color: colors.text }]}>Degree / Qualification</Text>
+            <Text style={[styles.label, { color: colors.text }]}>Qualification <Text style={{ color: colors.textMuted, fontWeight: '400' }}>Optional</Text></Text>
             <TextInput
-              placeholder="e.g. B.Sc Mathematics (UNILAG), B.Eng FUTA"
+              placeholder="Degree, certification, or institution"
               placeholderTextColor={colors.textMuted}
               style={[
                 styles.input,
@@ -171,45 +200,60 @@ export default function BecomeTutorScreen() {
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={[styles.label, { color: colors.text }]}>Hourly Rate (₦)</Text>
+            <Text style={[styles.label, { color: colors.text }]}>Hourly rate (₦)</Text>
             <TextInput
-              placeholder="3500"
+              placeholder="Enter your rate"
               placeholderTextColor={colors.textMuted}
-              keyboardType="numeric"
+              keyboardType="decimal-pad"
               style={[
                 styles.input,
                 {
                   backgroundColor: colors.inputBg,
-                  borderColor: colors.border,
+                  borderColor: errors.hourlyRate ? colors.danger : colors.border,
                   color: colors.text,
                 },
               ]}
               value={hourlyRate}
-              onChangeText={setHourlyRate}
+              onChangeText={(value) => {
+                setHourlyRate(value)
+                setErrors((current) => ({ ...current, hourlyRate: '' }))
+              }}
             />
+            {errors.hourlyRate ? <Text style={[styles.fieldError, { color: colors.danger }]}>{errors.hourlyRate}</Text> : null}
           </View>
 
           <View style={styles.fieldGroup}>
-            <Text style={[styles.label, { color: colors.text }]}>Teaching Bio & Experience</Text>
+            <Text style={[styles.label, { color: colors.text }]}>Teaching experience</Text>
             <TextInput
               multiline
               numberOfLines={4}
-              placeholder="Tell students about your teaching methodology and past examination success rates..."
+              placeholder="Describe your teaching approach and relevant experience."
               placeholderTextColor={colors.textMuted}
               style={[
                 styles.input,
                 styles.textArea,
                 {
                   backgroundColor: colors.inputBg,
-                  borderColor: colors.border,
+                  borderColor: errors.bio ? colors.danger : colors.border,
                   color: colors.text,
                 },
               ]}
               value={bio}
-              onChangeText={setBio}
+              onChangeText={(value) => {
+                setBio(value)
+                setErrors((current) => ({ ...current, bio: '' }))
+              }}
             />
+            {errors.bio ? <Text style={[styles.fieldError, { color: colors.danger }]}>{errors.bio}</Text> : null}
           </View>
         </View>
+
+        {submitError ? (
+          <View style={[styles.errorNotice, { backgroundColor: colors.dangerLight, borderColor: colors.danger }]}>
+            <Ionicons name="alert-circle-outline" size={18} color={colors.danger} />
+            <Text style={[styles.errorNoticeText, { color: colors.danger }]}>{submitError}</Text>
+          </View>
+        ) : null}
 
         <Pressable
           style={[
@@ -223,7 +267,10 @@ export default function BecomeTutorScreen() {
           {submitting ? (
             <ActivityIndicator color="#FFFFFF" />
           ) : (
-            <Text style={styles.primaryButtonText}>Submit Application</Text>
+            <>
+              <Text style={styles.primaryButtonText}>Submit application</Text>
+              <Ionicons name="arrow-forward" size={17} color="#FFFFFF" />
+            </>
           )}
         </Pressable>
       </ScrollView>
@@ -233,7 +280,7 @@ export default function BecomeTutorScreen() {
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
-  container: { flexGrow: 1, paddingHorizontal: 16, paddingBottom: 36, paddingTop: 12 },
+  container: { flexGrow: 1, paddingHorizontal: 18, paddingBottom: 40, paddingTop: 12 },
   headerRow: {
     alignItems: 'center',
     flexDirection: 'row',
@@ -248,47 +295,56 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     width: 40,
   },
-  headerTitle: { fontSize: 18, fontWeight: '800' },
+  headerTitle: { fontSize: 16, fontWeight: '800' },
   placeholder: { width: 40 },
   heroCard: {
-    borderRadius: 20,
+    borderRadius: 14,
     borderWidth: 1,
-    padding: 20,
-  },
-  eyebrow: { fontSize: 11, fontWeight: '800', letterSpacing: 0.8, textTransform: 'uppercase' },
-  title: { fontSize: 24, fontWeight: '800', lineHeight: 30, marginTop: 8 },
-  benefitRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 10, marginTop: 14 },
-  checkCircle: {
-    alignItems: 'center',
-    borderRadius: 12,
-    height: 24,
-    justifyContent: 'center',
-    marginTop: 2,
-    width: 24,
-  },
-  benefitText: { flex: 1, fontSize: 13, lineHeight: 19 },
-  formCard: {
-    borderRadius: 20,
-    borderWidth: 1,
-    marginTop: 18,
     padding: 18,
   },
+  eyebrow: { fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  title: { fontSize: 23, fontWeight: '800', lineHeight: 29, marginTop: 8 },
+  heroDescription: { fontSize: 13, lineHeight: 19, marginTop: 6 },
+  benefitRow: { alignItems: 'center', flexDirection: 'row', gap: 10, marginTop: 13 },
+  checkCircle: {
+    alignItems: 'center',
+    borderRadius: 10,
+    height: 22,
+    justifyContent: 'center',
+    width: 22,
+  },
+  stepNumber: { fontSize: 11, fontWeight: '800' },
+  benefitText: { flex: 1, fontSize: 12, lineHeight: 18 },
+  formCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    marginTop: 18,
+    padding: 16,
+  },
   sectionTitle: { fontSize: 16, fontWeight: '800', marginBottom: 14 },
-  fieldGroup: { marginBottom: 14 },
+  fieldGroup: { marginBottom: 16 },
   label: { fontSize: 13, fontWeight: '700', marginBottom: 6 },
   input: {
-    borderRadius: 12,
+    borderRadius: 10,
     borderWidth: 1,
     fontSize: 14,
+    minHeight: 48,
     paddingHorizontal: 14,
     paddingVertical: 12,
   },
-  textArea: { minHeight: 90, textAlignVertical: 'top' },
+  textArea: { minHeight: 112, textAlignVertical: 'top' },
+  fieldError: { fontSize: 12, lineHeight: 17, marginTop: 5 },
+  errorNotice: { alignItems: 'flex-start', borderRadius: 10, borderWidth: 1, flexDirection: 'row', gap: 8, marginTop: 14, padding: 12 },
+  errorNoticeText: { flex: 1, fontSize: 12, lineHeight: 18 },
   primaryButton: {
     alignItems: 'center',
-    borderRadius: 14,
+    borderRadius: 11,
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'center',
+    minHeight: 52,
     marginTop: 20,
-    paddingVertical: 16,
+    paddingHorizontal: 18,
   },
   primaryButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
 })

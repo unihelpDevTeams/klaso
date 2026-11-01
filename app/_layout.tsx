@@ -1,7 +1,7 @@
 import { Stack, useRouter, useSegments } from 'expo-router'
 import * as SplashScreen from 'expo-splash-screen'
 import { StatusBar } from 'expo-status-bar'
-import { onAuthStateChanged } from 'firebase/auth'
+import { onIdTokenChanged } from 'firebase/auth'
 import React, { useEffect, useState } from 'react'
 import { auth } from '../firebase/config'
 import { ThemeProvider, useTheme } from '../context/ThemeContext'
@@ -17,10 +17,13 @@ function RootNavigator() {
   const { isDark } = useTheme()
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    const unsubscribe = onIdTokenChanged(auth, (user) => {
       const inAuthGroup = segments[0] === '(auth)'
+      const onVerificationScreen = inAuthGroup && segments[1] === 'verify-email'
 
-      if (user && inAuthGroup) {
+      if (user && !user.emailVerified && !onVerificationScreen) {
+        router.replace('/(auth)/verify-email')
+      } else if (user && user.emailVerified && inAuthGroup) {
         router.replace('/(tabs)')
       } else if (!user && segments[0] === '(tabs)') {
         router.replace('/(auth)/onboarding')

@@ -1,12 +1,13 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { router } from 'expo-router'
-import { createUserWithEmailAndPassword, updateProfile } from 'firebase/auth'
+import { createUserWithEmailAndPassword, sendEmailVerification, updateProfile } from 'firebase/auth'
 import { doc, serverTimestamp, setDoc } from 'firebase/firestore'
-import React, { useState } from 'react'
+import React, { forwardRef, useMemo, useRef, useState } from 'react'
 import {
-  Alert,
   ActivityIndicator,
+  FlatList,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -16,13 +17,14 @@ import {
   TextInput,
   View,
 } from 'react-native'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { auth, db } from '../../firebase/config'
 import { verifyAdminAccess } from '../../firebase/adminAccess'
 import { useTheme } from '../../context/ThemeContext'
 import Header from '../components/header'
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const OTHER = 'Other'
 
 const SUBJECTS = [
   'Mathematics',
@@ -33,150 +35,229 @@ const SUBJECTS = [
   'General Academics',
 ]
 
+const TARGET_EXAMS = [
+  'WAEC / WASSCE',
+  'NECO',
+  'JAMB / UTME',
+  'Post-UTME',
+  'University courses',
+  'IELTS / TOEFL',
+  'Professional certification',
+  'General skills',
+]
+
+const ROLE_COPY = {
+  student: 'Learn, practise and book sessions with tutors.',
+  tutor: 'Teach, mentor and earn. Your profile is reviewed before it goes live.',
+}
+
+const INITIAL_FORM = {
+  name: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+  subject: '',
+  subjectOther: '',
+  qualification: '',
+  hourlyRate: '',
+  bio: '',
+  targetExam: '',
+  targetExamOther: '',
+}
+
+/* ------------------------------------------------------------------ */
+/* Helpers                                                             */
+/* ------------------------------------------------------------------ */
+
+function getPasswordStrength(password) {
+  if (!password) return { score: 0, label: '' }
+  let score = 0
+  if (password.length >= 8) score += 1
+  if (/[a-z]/.test(password) && /[A-Z]/.test(password)) score += 1
+  if (/\d/.test(password)) score += 1
+  if (/[^A-Za-z0-9]/.test(password)) score += 1
+  if (password.length < 8) score = Math.min(score, 1)
+  return { score, label: ['Too weak', 'Weak', 'Fair', 'Good', 'Strong'][score] }
+}
+
+function resolveChoice(choice, other) {
+  return choice === OTHER ? other.trim() : choice
+}
+
+function validateForm(form, role, acceptedTerms) {
+  const e = {}
+  const email = form.email.trim()
+
+  if (!form.name.trim()) e.name = 'Enter your full name.'
+  else if (form.name.trim().length < 2) e.name = 'Name is too short.'
+
+  if (!email) e.email = 'Enter your email address.'
+  else if (!emailPattern.test(email)) e.email = 'Enter a valid email address.'
+
+  if (!form.password) e.password = 'Create a password.'
+  else if (form.password.length < 8) e.password = 'Use at least 8 characters.'
+
+  if (!form.confirmPassword) e.confirmPassword = 'Re-enter your password.'
+  else if (form.confirmPassword !== form.password) e.confirmPassword = 'Passwords do not match.'
+
+  if (role === 'tutor') {
+    if (!form.subject) e.subject = 'Select your main subject.'
+    else if (form.subject === OTHER && !form.subjectOther.trim()) {
+      e.subjectOther = 'Tell us which subject you teach.'
+    }
+
+    if (!form.qualification.trim()) e.qualification = 'Enter your highest qualification.'
+
+    const rate = Number(form.hourlyRate)
+    if (!form.hourlyRate) e.hourlyRate = 'Enter your hourly rate.'
+    else if (!Number.isFinite(rate) || rate <= 0) e.hourlyRate = 'Enter a valid amount.'
+
+    if (!form.bio.trim()) e.bio = 'Add a short teaching bio.'
+    else if (form.bio.trim().length < 30) e.bio = 'Write at least 30 characters.'
+  } else {
+    if (!form.targetExam) e.targetExam = 'Select what you are preparing for.'
+    else if (form.targetExam === OTHER && !form.targetExamOther.trim()) {
+      e.targetExamOther = 'Tell us what you are preparing for.'
+    }
+  }
+
+  if (!acceptedTerms) e.terms = 'Accept the terms to continue.'
+  return e
+}
+
+function mapAuthError(error) {
+  switch (error?.code) {
+    case 'auth/email-already-in-use':
+      return 'An account with this email already exists. Try logging in instead.'
+    case 'auth/invalid-email':
+      return 'That email address is not valid.'
+    case 'auth/weak-password':
+      return 'Choose a stronger password with letters, numbers and symbols.'
+    case 'auth/network-request-failed':
+      return 'No internet connection. Check your network and try again.'
+    case 'auth/too-many-requests':
+      return 'Too many attempts. Please wait a moment and try again.'
+    default:
+      return error?.message || 'We could not create your account. Please try again.'
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/* Screen                                                              */
+/* ------------------------------------------------------------------ */
+
 export default function SignUp() {
   const { colors, isDark } = useTheme()
-  const [selectedRole, setSelectedRole] = useState('student') // 'student' | 'tutor'
-
-  const [form, setForm] = useState({
-    name: '',
-    email: '',
-    password: '',
-    confirmPassword: '',
-    // Tutor specific fields
-    subject: '',
-    qualification: '',
-    hourlyRate: '',
-    bio: '',
-    // Student specific field
-    targetExam: '',
-  })
-
-  const [errors, setErrors] = useState({})
+  const [role, setRole] = useState('student')
+  const [form, setForm] = useState(INITIAL_FORM)
   const [touched, setTouched] = useState({})
+  const [submitAttempted, setSubmitAttempted] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [acceptedTerms, setAcceptedTerms] = useState(false)
   const [loading, setLoading] = useState(false)
+  const [formError, setFormError] = useState('')
+
+  const emailRef = useRef(null)
+  const rateRef = useRef(null)
+  const bioRef = useRef(null)
+  const passwordRef = useRef(null)
+  const confirmRef = useRef(null)
+
+  const errors = useMemo(() => validateForm(form, role, acceptedTerms), [form, role, acceptedTerms])
+  const strength = useMemo(() => getPasswordStrength(form.password), [form.password])
+
+  const isTutor = role === 'tutor'
+  const showError = (field) => (touched[field] || submitAttempted) && errors[field]
 
   function updateField(field, value) {
     setForm((current) => ({ ...current, [field]: value }))
-    setErrors((current) => ({ ...current, [field]: undefined }))
+    if (formError) setFormError('')
   }
 
-  function handleBlur(field) {
-    setTouched((current) => ({ ...current, [field]: true }))
-  }
-
-  function validate() {
-    const nextErrors = {}
-    const normalizedEmail = form.email.trim()
-
-    if (!form.name.trim()) nextErrors.name = 'Full name is required.'
-    if (!normalizedEmail) nextErrors.email = 'Email address is required.'
-    else if (!emailPattern.test(normalizedEmail)) nextErrors.email = 'Please enter a valid email address.'
-
-    if (!form.password) nextErrors.password = 'Password is required.'
-    else if (form.password.length < 8) nextErrors.password = 'Password must be at least 8 characters.'
-
-    if (!form.confirmPassword) nextErrors.confirmPassword = 'Confirm your password.'
-    else if (form.confirmPassword !== form.password) nextErrors.confirmPassword = 'Passwords do not match.'
-
-    if (selectedRole === 'tutor') {
-      if (!form.subject.trim()) {
-        nextErrors.subject = 'Choose a teaching subject.'
-      }
-      if (!form.qualification.trim()) {
-        nextErrors.qualification = 'Highest degree or qualification is required.'
-      }
-      if (!form.hourlyRate.trim() || isNaN(Number(form.hourlyRate)) || Number(form.hourlyRate) <= 0) {
-        nextErrors.hourlyRate = 'Please enter a valid hourly rate (in Naira).'
-      }
-      if (!form.bio.trim() || form.bio.trim().length < 15) {
-        nextErrors.bio = 'Brief teaching bio must be at least 15 characters.'
-      }
-    }
-
-    if (!acceptedTerms) nextErrors.terms = 'You must accept the terms to continue.'
-
-    setErrors(nextErrors)
-    setTouched({
-      name: true,
-      email: true,
-      password: true,
-      confirmPassword: true,
-      qualification: true,
-      subject: true,
-      hourlyRate: true,
-      bio: true,
-      terms: true,
-    })
-    return Object.keys(nextErrors).length === 0
+  function touch(field) {
+    setTouched((current) => (current[field] ? current : { ...current, [field]: true }))
   }
 
   async function handleSubmit() {
-    if (!validate() || loading) return
+    if (loading) return
+    setSubmitAttempted(true)
+
+    if (Object.keys(errors).length > 0) {
+      setFormError('Some details are missing or incorrect. Check the highlighted fields.')
+      return
+    }
 
     setLoading(true)
+    setFormError('')
+    let credential = null
+
     try {
-      const email = form.email.trim()
-      const credential = await createUserWithEmailAndPassword(auth, email, form.password)
+      const email = form.email.trim().toLowerCase()
       const displayName = form.name.trim()
+
+      credential = await createUserWithEmailAndPassword(auth, email, form.password)
       await updateProfile(credential.user, { displayName })
 
       let isEmailAdmin = false
-      let emailVerificationRequired = false
       try {
         const adminVerification = await verifyAdminAccess(credential.user)
         isEmailAdmin = adminVerification.isAdmin
-        emailVerificationRequired = adminVerification.emailVerificationRequired
       } catch (verificationError) {
         console.error('Unable to verify configured admin access:', verificationError)
       }
-      const role = isEmailAdmin ? 'admin' : selectedRole
+
+      const resolvedRole = isEmailAdmin ? 'admin' : role
 
       const userData = {
         uid: credential.user.uid,
         displayName,
         email: credential.user.email,
-        role,
+        role: resolvedRole,
         admin: isEmailAdmin,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       }
 
-      if (role === 'tutor') {
-        userData.subject = form.subject
+      if (isTutor) {
+        userData.subject = resolveChoice(form.subject, form.subjectOther)
         userData.qualification = form.qualification.trim()
-        userData.hourlyRate = Number(form.hourlyRate.trim())
+        userData.hourlyRate = Number(form.hourlyRate)
         userData.bio = form.bio.trim()
-        userData.approved = isEmailAdmin ? true : false // Needs admin review unless admin
+        userData.approved = isEmailAdmin // tutors need admin review unless the account is an admin
         userData.reviewsCount = 0
       } else {
-        userData.targetExam = form.targetExam
+        userData.targetExam = resolveChoice(form.targetExam, form.targetExamOther)
         userData.enrolledCount = 0
         userData.certificatesCount = 0
       }
 
-      await setDoc(doc(db, 'users', credential.user.uid), userData)
-
-      if (emailVerificationRequired) {
-        Alert.alert(
-          'Verify your admin email',
-          'We sent a verification link to your configured admin email. Verify it, then sign in again to activate admin access.',
-          [{ text: 'Continue', onPress: () => router.replace('/(tabs)') }]
-        )
-      } else {
-        router.replace('/(tabs)')
+      try {
+        await setDoc(doc(db, 'users', credential.user.uid), userData)
+      } catch (writeError) {
+        // Avoid leaving an auth account without a profile document.
+        await credential.user.delete().catch(() => {})
+        throw writeError
       }
+
+      let verificationEmailFailed = false
+      try {
+        await sendEmailVerification(credential.user)
+      } catch (verificationError) {
+        console.error('Unable to send email verification:', verificationError)
+        verificationEmailFailed = true
+      }
+
+      router.replace({
+        pathname: '/(auth)/verify-email',
+        params: {
+          email: credential.user.email || email,
+          resendRequired: verificationEmailFailed ? 'true' : 'false',
+        },
+      })
     } catch (error) {
       console.log('Sign up error:', error)
-      const message =
-        error.code === 'auth/email-already-in-use'
-          ? 'An account already exists with this email address.'
-          : error.code === 'auth/weak-password'
-          ? 'Password is too weak. Use a mix of letters, numbers, and symbols.'
-          : error.message || 'Unable to create your account. Please try again.'
-      setErrors((prev) => ({ ...prev, form: message }))
+      setFormError(mapAuthError(error))
     } finally {
       setLoading(false)
     }
@@ -185,7 +266,12 @@ export default function SignUp() {
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>
       <StatusBar barStyle={isDark ? 'light-content' : 'dark-content'} />
-      <Header showBack title="Create Account" subtitle="Join the Klaso Academy" containerStyle={{ backgroundColor: colors.surface }} />
+      <Header
+        showBack
+        title="Create account"
+        subtitle="Join Klaso Academy"
+        containerStyle={{ backgroundColor: colors.surface }}
+      />
 
       <KeyboardAvoidingView
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -194,360 +280,296 @@ export default function SignUp() {
         <ScrollView
           contentContainerStyle={styles.container}
           keyboardShouldPersistTaps="handled"
+          keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
           showsVerticalScrollIndicator={false}
         >
-          {/* Header Title */}
-          <View style={styles.headingWrap}>
-            <Text style={[styles.title, { color: colors.text }]}>Start Your Learning Journey</Text>
-            <Text style={[styles.subtitle, { color: colors.textMuted }]}>Choose your account type to personalize your experience.</Text>
+          {/* Role selector */}
+          <View style={[styles.segment, { backgroundColor: colors.borderSubtle }]}>
+            {[
+              { key: 'student', label: 'Student', icon: 'school-outline' },
+              { key: 'tutor', label: 'Tutor', icon: 'easel-outline' },
+            ].map((item) => {
+              const active = role === item.key
+              return (
+                <Pressable
+                  key={item.key}
+                  accessibilityRole="tab"
+                  accessibilityState={{ selected: active }}
+                  onPress={() => {
+                    setRole(item.key)
+                    setFormError('')
+                  }}
+                  style={[
+                    styles.segmentItem,
+                    active && {
+                      backgroundColor: colors.card,
+                      borderColor: colors.border,
+                      borderWidth: StyleSheet.hairlineWidth,
+                    },
+                  ]}
+                >
+                  <Ionicons
+                    name={item.icon}
+                    size={18}
+                    color={active ? colors.primary : colors.textMuted}
+                  />
+                  <Text
+                    style={[
+                      styles.segmentText,
+                      { color: active ? colors.text : colors.textMuted },
+                      active && styles.segmentTextActive,
+                    ]}
+                  >
+                    {item.label}
+                  </Text>
+                </Pressable>
+              )
+            })}
           </View>
+          <Text style={[styles.roleCaption, { color: colors.textMuted }]}>{ROLE_COPY[role]}</Text>
 
-          {/* Account Role Selector */}
-          <Text style={[styles.roleSectionLabel, { color: colors.text }]}>Select Account Type</Text>
-          <View style={styles.roleSelectorRow}>
-            {/* Student Role Card */}
-            <Pressable
-              style={[
-                styles.roleCard,
-                { backgroundColor: colors.card, borderColor: colors.border },
-                selectedRole === 'student' && {
-                  backgroundColor: colors.primaryLight,
-                  borderColor: colors.primary,
-                  shadowColor: colors.primary,
-                },
-              ]}
-              onPress={() => setSelectedRole('student')}
-            >
-              <View
-                style={[
-                  styles.roleIconBox,
-                  { backgroundColor: colors.borderSubtle },
-                  selectedRole === 'student' && { backgroundColor: colors.primaryLight },
-                ]}
-              >
-                <Ionicons
-                  name="school"
-                  size={24}
-                  color={selectedRole === 'student' ? colors.primary : colors.textMuted}
-                />
-              </View>
-              <Text style={[styles.roleTitle, { color: selectedRole === 'student' ? colors.primary : colors.text }]}>
-                Student
-              </Text>
-              <Text style={[styles.roleSub, { color: colors.textMuted }]}>Learn, practice & book tutors</Text>
-              <View
-                style={[
-                  styles.radioDot,
-                  { borderColor: selectedRole === 'student' ? colors.primary : colors.border },
-                ]}
-              >
-                {selectedRole === 'student' && (
-                  <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />
-                )}
-              </View>
-            </Pressable>
-
-            {/* Tutor Role Card */}
-            <Pressable
-              style={[
-                styles.roleCard,
-                { backgroundColor: colors.card, borderColor: colors.border },
-                selectedRole === 'tutor' && {
-                  backgroundColor: colors.primaryLight,
-                  borderColor: colors.primary,
-                  shadowColor: colors.primary,
-                },
-              ]}
-              onPress={() => setSelectedRole('tutor')}
-            >
-              <View
-                style={[
-                  styles.roleIconBox,
-                  { backgroundColor: colors.borderSubtle },
-                  selectedRole === 'tutor' && { backgroundColor: colors.primaryLight },
-                ]}
-              >
-                <Ionicons
-                  name="easel"
-                  size={24}
-                  color={selectedRole === 'tutor' ? colors.primary : colors.textMuted}
-                />
-              </View>
-              <Text style={[styles.roleTitle, { color: selectedRole === 'tutor' ? colors.primary : colors.text }]}>
-                Tutor
-              </Text>
-              <Text style={[styles.roleSub, { color: colors.textMuted }]}>Teach, mentor & earn income</Text>
-              <View
-                style={[
-                  styles.radioDot,
-                  { borderColor: selectedRole === 'tutor' ? colors.primary : colors.border },
-                ]}
-              >
-                {selectedRole === 'tutor' && (
-                  <View style={[styles.radioInner, { backgroundColor: colors.primary }]} />
-                )}
-              </View>
-            </Pressable>
-          </View>
-
-          {/* Form Fields */}
-          <View style={styles.form}>
+          {/* Account details */}
+          <Section title="Your details" colors={colors}>
             <Field
-              label="Full Name"
+              label="Full name"
               value={form.name}
               onChangeText={(v) => updateField('name', v)}
-              onBlur={() => handleBlur('name')}
-              placeholder="e.g. Chiamaka Okafor"
-              error={errors.name}
-              isTouched={touched.name}
-              isValid={touched.name && !errors.name && form.name.trim().length > 0}
+              onBlur={() => touch('name')}
+              placeholder="Chiamaka Okafor"
+              autoCapitalize="words"
+              autoComplete="name"
+              textContentType="name"
+              returnKeyType="next"
+              onSubmitEditing={() => emailRef.current?.focus()}
+              blurOnSubmit={false}
+              error={showError('name')}
               leftIcon="person-outline"
             />
 
             <Field
-              label="Email Address"
+              ref={emailRef}
+              label="Email address"
               value={form.email}
               onChangeText={(v) => updateField('email', v)}
-              onBlur={() => handleBlur('email')}
+              onBlur={() => touch('email')}
               placeholder="name@example.com"
               keyboardType="email-address"
               autoCapitalize="none"
-              error={errors.email}
-              isTouched={touched.email}
-              isValid={touched.email && !errors.email && form.email.trim().length > 0}
+              autoCorrect={false}
+              autoComplete="email"
+              textContentType="emailAddress"
+              returnKeyType="done"
+              error={showError('email')}
               leftIcon="mail-outline"
             />
+          </Section>
 
-            {/* Tutor specific inputs */}
-            {selectedRole === 'tutor' && (
-              <View
-                style={[
-                  styles.tutorExtraBox,
-                  { backgroundColor: colors.primaryMint, borderColor: colors.border },
-                ]}
-              >
-                <View style={styles.tutorHeader}>
-                  <Ionicons name="sparkles" size={16} color={colors.primary} />
-                  <Text style={[styles.tutorHeaderTitle, { color: colors.primary }]}>Tutor Teaching Profile</Text>
-                </View>
+          {/* Role specific */}
+          {isTutor ? (
+            <Section title="Teaching profile" colors={colors}>
+              <SelectField
+                label="Main subject"
+                placeholder="Select a subject"
+                sheetTitle="Main subject"
+                options={SUBJECTS}
+                value={form.subject}
+                onSelect={(v) => updateField('subject', v)}
+                onTouched={() => touch('subject')}
+                error={showError('subject')}
+                leftIcon="book-outline"
+                otherLabel="Your subject"
+                otherPlaceholder="e.g. Further Mathematics"
+                otherValue={form.subjectOther}
+                onChangeOther={(v) => updateField('subjectOther', v)}
+                onOtherBlur={() => touch('subjectOther')}
+                otherError={showError('subjectOther')}
+              />
 
-                {/* Subject Selector */}
-                <View style={styles.fieldGroup}>
-                  <Text style={[styles.label, { color: colors.text }]}>Primary Teaching Subject</Text>
-                  <View style={styles.subjectPillsRow}>
-                    {SUBJECTS.map((sub) => {
-                      const isSubSelected = form.subject === sub
-                      return (
-                        <Pressable
-                          key={sub}
-                          style={[
-                            styles.subjectPill,
-                            { backgroundColor: colors.card, borderColor: colors.border },
-                            isSubSelected && { backgroundColor: colors.primary, borderColor: colors.primary },
-                          ]}
-                          onPress={() => updateField('subject', sub)}
-                        >
-                          <Text
-                            style={[
-                              styles.subjectPillText,
-                              { color: isSubSelected ? '#FFFFFF' : colors.textSecondary },
-                            ]}
-                          >
-                            {sub}
-                          </Text>
-                        </Pressable>
-                      )
-                    })}
-                  </View>
-                  {!!errors.subject && (
-                    <Text style={[styles.error, { color: colors.danger }]}>{errors.subject}</Text>
-                  )}
-                </View>
+              <Field
+                label="Highest qualification"
+                value={form.qualification}
+                onChangeText={(v) => updateField('qualification', v)}
+                onBlur={() => touch('qualification')}
+                placeholder="B.Sc. Mathematics, University of Lagos"
+                autoCapitalize="sentences"
+                returnKeyType="next"
+                onSubmitEditing={() => rateRef.current?.focus()}
+                blurOnSubmit={false}
+                error={showError('qualification')}
+                leftIcon="ribbon-outline"
+              />
 
-                <Field
-                  label="Highest Qualification / Alma Mater"
-                  value={form.qualification}
-                  onChangeText={(v) => updateField('qualification', v)}
-                  onBlur={() => handleBlur('qualification')}
-                  placeholder="e.g. B.Sc. Mathematics, UNILAG"
-                  error={errors.qualification}
-                  isTouched={touched.qualification}
-                  isValid={touched.qualification && !errors.qualification && form.qualification.trim().length > 0}
-                  leftIcon="school-outline"
-                />
+              <Field
+                ref={rateRef}
+                label="Hourly rate"
+                value={form.hourlyRate}
+                onChangeText={(v) => updateField('hourlyRate', v.replace(/[^0-9]/g, ''))}
+                onBlur={() => touch('hourlyRate')}
+                placeholder="3500"
+                keyboardType="number-pad"
+                maxLength={7}
+                prefix="₦"
+                error={showError('hourlyRate')}
+              />
 
-                <Field
-                  label="Hourly Rate (₦ Naira)"
-                  value={form.hourlyRate}
-                  onChangeText={(v) => updateField('hourlyRate', v)}
-                  onBlur={() => handleBlur('hourlyRate')}
-                  placeholder="e.g. 3500"
-                  keyboardType="numeric"
-                  error={errors.hourlyRate}
-                  isTouched={touched.hourlyRate}
-                  isValid={touched.hourlyRate && !errors.hourlyRate && Number(form.hourlyRate) > 0}
-                  leftIcon="cash-outline"
-                />
+              <Field
+                ref={bioRef}
+                label="Teaching bio"
+                value={form.bio}
+                onChangeText={(v) => updateField('bio', v)}
+                onBlur={() => touch('bio')}
+                placeholder="Your teaching approach, the exams you prepare students for, and results you've helped them achieve."
+                multiline
+                maxLength={400}
+                autoCapitalize="sentences"
+                error={showError('bio')}
+                inputStyle={styles.bioInput}
+                counter={`${form.bio.trim().length}/400`}
+                alignTop
+              />
+            </Section>
+          ) : (
+            <Section title="Your learning goal" colors={colors}>
+              <SelectField
+                label="I'm preparing for"
+                placeholder="Select an exam or goal"
+                sheetTitle="What are you preparing for?"
+                options={TARGET_EXAMS}
+                value={form.targetExam}
+                onSelect={(v) => updateField('targetExam', v)}
+                onTouched={() => touch('targetExam')}
+                error={showError('targetExam')}
+                leftIcon="flag-outline"
+                otherLabel="Your goal"
+                otherPlaceholder="e.g. SAT, ICAN, Cambridge A-Levels"
+                otherValue={form.targetExamOther}
+                onChangeOther={(v) => updateField('targetExamOther', v)}
+                onOtherBlur={() => touch('targetExamOther')}
+                otherError={showError('targetExamOther')}
+              />
+            </Section>
+          )}
 
-                <Field
-                  label="Brief Teaching Bio & Approach"
-                  value={form.bio}
-                  onChangeText={(v) => updateField('bio', v)}
-                  onBlur={() => handleBlur('bio')}
-                  placeholder="Explain your teaching philosophy, past student successes, and exam preparation strategies..."
-                  multiline
-                  numberOfLines={3}
-                  error={errors.bio}
-                  isTouched={touched.bio}
-                  isValid={touched.bio && !errors.bio && form.bio.trim().length >= 15}
-                  leftIcon="document-text-outline"
-                  inputStyle={{ height: 80, textAlignVertical: 'top', paddingTop: 10 }}
-                />
-              </View>
-            )}
-
-            {/* Student specific inputs */}
-            {selectedRole === 'student' && (
-              <View style={styles.fieldGroup}>
-                <Text style={[styles.label, { color: colors.text }]}>Primary Target Exam / Learning Goal</Text>
-                <View style={styles.subjectPillsRow}>
-                  {['WAEC / WASSCE', 'JAMB / UTME', 'University Courses', 'General Skills'].map((exam) => {
-                    const isExamSelected = form.targetExam === exam
-                    return (
-                      <Pressable
-                        key={exam}
-                        style={[
-                          styles.subjectPill,
-                          { backgroundColor: colors.card, borderColor: colors.border },
-                          isExamSelected && { backgroundColor: colors.primary, borderColor: colors.primary },
-                        ]}
-                        onPress={() => updateField('targetExam', exam)}
-                      >
-                        <Text
-                          style={[
-                            styles.subjectPillText,
-                            { color: isExamSelected ? '#FFFFFF' : colors.textSecondary },
-                          ]}
-                        >
-                          {exam}
-                        </Text>
-                      </Pressable>
-                    )
-                  })}
-                </View>
-              </View>
-            )}
+          {/* Security */}
+          <Section title="Security" colors={colors}>
+            <View style={styles.fieldStack}>
+              <Field
+                ref={passwordRef}
+                label="Password"
+                value={form.password}
+                onChangeText={(v) => updateField('password', v)}
+                onBlur={() => touch('password')}
+                placeholder="At least 8 characters"
+                secureTextEntry={!showPassword}
+                autoCapitalize="none"
+                autoCorrect={false}
+                textContentType="newPassword"
+                returnKeyType="next"
+                onSubmitEditing={() => confirmRef.current?.focus()}
+                blurOnSubmit={false}
+                error={showError('password')}
+                leftIcon="lock-closed-outline"
+                rightIcon={showPassword ? 'eye-off-outline' : 'eye-outline'}
+                rightLabel={showPassword ? 'Hide password' : 'Show password'}
+                onRightIconPress={() => setShowPassword((v) => !v)}
+              />
+              {form.password.length > 0 && <StrengthMeter strength={strength} colors={colors} />}
+            </View>
 
             <Field
-              label="Password"
-              value={form.password}
-              onChangeText={(v) => updateField('password', v)}
-              onBlur={() => handleBlur('password')}
-              placeholder="At least 8 characters"
-              secureTextEntry={!showPassword}
-              error={errors.password}
-              isTouched={touched.password}
-              isValid={touched.password && !errors.password && form.password.length >= 8}
-              leftIcon="lock-closed-outline"
-              rightIcon={showPassword ? 'eye-off-outline' : 'eye-outline'}
-              onRightIconPress={() => setShowPassword((v) => !v)}
-            />
-
-            <Field
-              label="Confirm Password"
+              ref={confirmRef}
+              label="Confirm password"
               value={form.confirmPassword}
               onChangeText={(v) => updateField('confirmPassword', v)}
-              onBlur={() => handleBlur('confirmPassword')}
+              onBlur={() => touch('confirmPassword')}
               placeholder="Re-enter your password"
               secureTextEntry={!showConfirmPassword}
-              error={errors.confirmPassword}
-              isTouched={touched.confirmPassword}
-              isValid={
-                touched.confirmPassword &&
-                !errors.confirmPassword &&
-                form.confirmPassword.length > 0 &&
-                form.confirmPassword === form.password
-              }
-              leftIcon="shield-checkmark-outline"
+              autoCapitalize="none"
+              autoCorrect={false}
+              textContentType="newPassword"
+              returnKeyType="done"
+              onSubmitEditing={handleSubmit}
+              error={showError('confirmPassword')}
+              leftIcon="lock-closed-outline"
               rightIcon={showConfirmPassword ? 'eye-off-outline' : 'eye-outline'}
+              rightLabel={showConfirmPassword ? 'Hide password' : 'Show password'}
               onRightIconPress={() => setShowConfirmPassword((v) => !v)}
             />
+          </Section>
 
-            {/* Terms checkbox */}
-            <Pressable
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: acceptedTerms }}
-              onPress={() => {
-                setAcceptedTerms((v) => !v)
-                setErrors((c) => ({ ...c, terms: undefined }))
-              }}
-              style={styles.termsRow}
-            >
-              <View
-                style={[
-                  styles.checkbox,
-                  {
-                    backgroundColor: acceptedTerms ? colors.primary : colors.card,
-                    borderColor: touched.terms && errors.terms
-                      ? colors.danger
-                      : acceptedTerms
-                      ? colors.primary
-                      : colors.border,
-                  },
-                ]}
-              >
-                {acceptedTerms && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
-              </View>
-              <Text style={[styles.termsText, { color: colors.textMuted }]}>
-                I agree to Klaso&apos;s{' '}
-                <Text style={[styles.termsHighlight, { color: colors.primary }]}>Terms of Service</Text> and{' '}
-                <Text style={[styles.termsHighlight, { color: colors.primary }]}>Privacy Policy</Text>.
-              </Text>
-            </Pressable>
-
-            {!!errors.terms && (
-              <View style={styles.inlineErrorRow}>
-                <Ionicons name="alert-circle" size={14} color={colors.danger} />
-                <Text style={[styles.error, { color: colors.danger }]}>{errors.terms}</Text>
-              </View>
-            )}
-
-            {!!errors.form && (
-              <View style={[styles.bannerError, { backgroundColor: colors.dangerLight }]}>
-                <Ionicons name="warning-outline" size={18} color={colors.danger} />
-                <Text style={[styles.bannerErrorText, { color: colors.danger }]}>{errors.form}</Text>
-              </View>
-            )}
-
-            {/* Submit Button */}
-            <Pressable
-              accessibilityRole="button"
-              onPress={handleSubmit}
-              disabled={loading}
-              style={({ pressed }) => [
-                styles.primaryButton,
-                { backgroundColor: colors.primary, shadowColor: colors.primary },
-                pressed && styles.pressed,
-                loading && styles.buttonDisabled,
+          {/* Terms */}
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: acceptedTerms }}
+            onPress={() => {
+              setAcceptedTerms((v) => !v)
+              touch('terms')
+              if (formError) setFormError('')
+            }}
+            style={styles.termsRow}
+          >
+            <View
+              style={[
+                styles.checkbox,
+                {
+                  backgroundColor: acceptedTerms ? colors.primary : colors.card,
+                  borderColor: showError('terms')
+                    ? colors.danger
+                    : acceptedTerms
+                    ? colors.primary
+                    : colors.border,
+                },
               ]}
             >
-              {loading ? (
-                <ActivityIndicator color="#FFFFFF" size="small" />
-              ) : (
-                <>
-                  <Text style={styles.primaryButtonText}>
-                    {selectedRole === 'tutor' ? 'Register as Tutor' : 'Create Student Account'}
-                  </Text>
-                  <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-                </>
-              )}
-            </Pressable>
-          </View>
+              {acceptedTerms && <Ionicons name="checkmark" size={14} color="#FFFFFF" />}
+            </View>
+            <Text style={[styles.termsText, { color: colors.textMuted }]}>
+              I agree to the{' '}
+              {/* Hook these up with Linking.openURL once the pages are live. */}
+              <Text style={[styles.termsLink, { color: colors.primary }]}>Terms of Service</Text> and{' '}
+              <Text style={[styles.termsLink, { color: colors.primary }]}>Privacy Policy</Text>.
+            </Text>
+          </Pressable>
+          {!!showError('terms') && (
+            <Text style={[styles.errorText, styles.termsError, { color: colors.danger }]}>
+              {errors.terms}
+            </Text>
+          )}
 
-          {/* Bottom Login Link */}
+          {!!formError && (
+            <View
+              accessibilityLiveRegion="polite"
+              style={[styles.banner, { backgroundColor: colors.dangerLight }]}
+            >
+              <Ionicons name="alert-circle" size={18} color={colors.danger} />
+              <Text style={[styles.bannerText, { color: colors.danger }]}>{formError}</Text>
+            </View>
+          )}
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: loading, busy: loading }}
+            onPress={handleSubmit}
+            disabled={loading}
+            style={({ pressed }) => [
+              styles.primaryButton,
+              { backgroundColor: colors.primary },
+              pressed && styles.pressed,
+              loading && styles.buttonDisabled,
+            ]}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <Text style={styles.primaryButtonText}>
+                {isTutor ? 'Create tutor account' : 'Create student account'}
+              </Text>
+            )}
+          </Pressable>
+
           <View style={styles.bottomPrompt}>
             <Text style={[styles.promptText, { color: colors.textMuted }]}>Already have an account?</Text>
-            <Pressable onPress={() => router.push('/(auth)/login')}>
+            <Pressable onPress={() => router.push('/(auth)/login')} hitSlop={8}>
               <Text style={[styles.linkText, { color: colors.primary }]}> Log in</Text>
             </Pressable>
           </View>
@@ -557,20 +579,42 @@ export default function SignUp() {
   )
 }
 
-function Field({
-  label,
-  error,
-  isTouched,
-  isValid,
-  leftIcon,
-  rightIcon,
-  onRightIconPress,
-  onBlur,
-  inputStyle,
-  ...inputProps
-}) {
+/* ------------------------------------------------------------------ */
+/* Building blocks                                                     */
+/* ------------------------------------------------------------------ */
+
+function Section({ title, colors, children }) {
+  return (
+    <View style={styles.section}>
+      <Text style={[styles.sectionTitle, { color: colors.text }]}>{title}</Text>
+      <View style={styles.sectionBody}>{children}</View>
+    </View>
+  )
+}
+
+const Field = forwardRef(function Field(
+  {
+    label,
+    error,
+    leftIcon,
+    rightIcon,
+    rightLabel,
+    onRightIconPress,
+    prefix,
+    counter,
+    alignTop,
+    onBlur,
+    inputStyle,
+    ...inputProps
+  },
+  ref
+) {
   const { colors } = useTheme()
-  const [isFocused, setIsFocused] = useState(false)
+  const [focused, setFocused] = useState(false)
+  const hasError = !!error
+
+  const borderColor = hasError ? colors.danger : focused ? colors.primary : colors.border
+  const iconColor = hasError ? colors.danger : focused ? colors.primary : colors.textMuted
 
   return (
     <View style={styles.fieldGroup}>
@@ -578,208 +622,363 @@ function Field({
       <View
         style={[
           styles.inputWrap,
-          {
-            backgroundColor: colors.inputBg,
-            borderColor: colors.border,
-          },
-          isFocused && { borderColor: colors.primary },
-          isTouched && error && { borderColor: colors.danger, backgroundColor: colors.dangerLight },
-          isTouched && isValid && { borderColor: colors.primary },
+          { backgroundColor: colors.inputBg, borderColor },
+          alignTop && styles.inputWrapTop,
         ]}
       >
-        {leftIcon && (
+        {!!leftIcon && (
           <Ionicons
             name={leftIcon}
             size={18}
-            color={isTouched && error ? colors.danger : isFocused ? colors.primary : colors.textMuted}
-            style={styles.leftIcon}
+            color={iconColor}
+            style={[styles.leftIcon, alignTop && styles.leftIconTop]}
           />
         )}
+        {!!prefix && <Text style={[styles.prefix, { color: colors.textSecondary }]}>{prefix}</Text>}
 
         <TextInput
+          ref={ref}
           {...inputProps}
+          accessibilityLabel={label}
           style={[styles.input, { color: colors.text }, inputStyle]}
           placeholderTextColor={colors.textMuted}
-          onFocus={() => setIsFocused(true)}
+          selectionColor={colors.primary}
+          onFocus={() => setFocused(true)}
           onBlur={(e) => {
-            setIsFocused(false)
-            if (onBlur) onBlur(e)
+            setFocused(false)
+            onBlur?.(e)
           }}
         />
 
-        {isTouched && isValid && (
-          <Ionicons name="checkmark-circle" size={18} color={colors.primary} style={styles.statusIcon} />
-        )}
-
-        {isTouched && error && (
-          <Ionicons name="alert-circle" size={18} color={colors.danger} style={styles.statusIcon} />
-        )}
-
-        {rightIcon && (
-          <Pressable accessibilityLabel="Toggle visibility" onPress={onRightIconPress} hitSlop={10}>
+        {!!rightIcon && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={rightLabel || 'Toggle visibility'}
+            onPress={onRightIconPress}
+            hitSlop={10}
+          >
             <Ionicons name={rightIcon} size={18} color={colors.textMuted} />
           </Pressable>
         )}
       </View>
 
-      {isTouched && !!error && (
-        <View style={styles.inlineErrorRow}>
-          <Text style={[styles.error, { color: colors.danger }]}>{error}</Text>
+      {(hasError || !!counter) && (
+        <View style={styles.helperRow}>
+          <Text
+            accessibilityLiveRegion="polite"
+            style={[styles.errorText, { color: colors.danger, flex: 1 }]}
+          >
+            {hasError ? error : ''}
+          </Text>
+          {!!counter && <Text style={[styles.counter, { color: colors.textMuted }]}>{counter}</Text>}
         </View>
       )}
     </View>
   )
+})
+
+/**
+ * Dropdown (bottom sheet) with an automatic "Other" option.
+ * Choosing "Other" reveals a text input directly beneath the dropdown.
+ */
+function SelectField({
+  label,
+  placeholder,
+  sheetTitle,
+  options,
+  value,
+  onSelect,
+  onTouched,
+  error,
+  leftIcon,
+  otherLabel,
+  otherPlaceholder,
+  otherValue,
+  onChangeOther,
+  onOtherBlur,
+  otherError,
+}) {
+  const { colors } = useTheme()
+  const insets = useSafeAreaInsets()
+  const [open, setOpen] = useState(false)
+
+  const allOptions = useMemo(() => [...options, OTHER], [options])
+  const hasError = !!error
+
+  function close() {
+    setOpen(false)
+    onTouched?.()
+  }
+
+  function choose(option) {
+    onSelect(option)
+    close()
+  }
+
+  return (
+    <View style={styles.fieldStack}>
+      <View style={styles.fieldGroup}>
+        <Text style={[styles.label, { color: colors.text }]}>{label}</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${label}. ${value || placeholder}`}
+          onPress={() => setOpen(true)}
+          style={[
+            styles.inputWrap,
+            {
+              backgroundColor: colors.inputBg,
+              borderColor: hasError ? colors.danger : open ? colors.primary : colors.border,
+            },
+          ]}
+        >
+          {!!leftIcon && (
+            <Ionicons
+              name={leftIcon}
+              size={18}
+              color={hasError ? colors.danger : colors.textMuted}
+              style={styles.leftIcon}
+            />
+          )}
+          <Text
+            numberOfLines={1}
+            style={[styles.selectValue, { color: value ? colors.text : colors.textMuted }]}
+          >
+            {value || placeholder}
+          </Text>
+          <Ionicons name="chevron-down" size={18} color={colors.textMuted} />
+        </Pressable>
+        {hasError && <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>}
+      </View>
+
+      {value === OTHER && (
+        <Field
+          label={otherLabel}
+          value={otherValue}
+          onChangeText={onChangeOther}
+          onBlur={onOtherBlur}
+          placeholder={otherPlaceholder}
+          autoCapitalize="sentences"
+          autoFocus
+          maxLength={60}
+          error={otherError}
+          leftIcon="create-outline"
+        />
+      )}
+
+      <Modal visible={open} transparent animationType="slide" onRequestClose={close}>
+        <View style={styles.modalRoot}>
+          <Pressable style={styles.backdrop} onPress={close} accessibilityLabel="Close" />
+          <View
+            style={[
+              styles.sheet,
+              { backgroundColor: colors.surface, paddingBottom: Math.max(insets.bottom, 12) },
+            ]}
+          >
+            <View style={[styles.sheetHandle, { backgroundColor: colors.border }]} />
+            <View style={styles.sheetHeader}>
+              <Text style={[styles.sheetTitle, { color: colors.text }]}>{sheetTitle || label}</Text>
+              <Pressable onPress={close} hitSlop={10} accessibilityLabel="Close">
+                <Ionicons name="close" size={22} color={colors.textMuted} />
+              </Pressable>
+            </View>
+
+            <FlatList
+              data={allOptions}
+              keyExtractor={(item) => item}
+              bounces={false}
+              style={styles.sheetList}
+              ItemSeparatorComponent={() => (
+                <View style={[styles.separator, { backgroundColor: colors.borderSubtle }]} />
+              )}
+              renderItem={({ item }) => {
+                const selected = item === value
+                return (
+                  <Pressable
+                    accessibilityRole="menuitem"
+                    accessibilityState={{ selected }}
+                    onPress={() => choose(item)}
+                    style={({ pressed }) => [
+                      styles.option,
+                      selected && { backgroundColor: colors.primaryLight },
+                      pressed && !selected && { backgroundColor: colors.borderSubtle },
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.optionText,
+                        { color: selected ? colors.primary : colors.text },
+                        selected && styles.optionTextSelected,
+                      ]}
+                    >
+                      {item === OTHER ? 'Other (type your own)' : item}
+                    </Text>
+                    {selected && <Ionicons name="checkmark" size={20} color={colors.primary} />}
+                  </Pressable>
+                )
+              }}
+            />
+          </View>
+        </View>
+      </Modal>
+    </View>
+  )
 }
+
+function StrengthMeter({ strength, colors }) {
+  const color = strength.score <= 1 ? colors.danger : strength.score === 2 ? '#D97706' : colors.primary
+  return (
+    <View style={styles.strengthRow}>
+      <View style={styles.strengthBars}>
+        {[1, 2, 3, 4].map((step) => (
+          <View
+            key={step}
+            style={[
+              styles.strengthBar,
+              { backgroundColor: step <= strength.score ? color : colors.borderSubtle },
+            ]}
+          />
+        ))}
+      </View>
+      <Text style={[styles.strengthLabel, { color }]}>{strength.label}</Text>
+    </View>
+  )
+}
+
+/* ------------------------------------------------------------------ */
+/* Styles                                                              */
+/* ------------------------------------------------------------------ */
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   flex: { flex: 1 },
-  container: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 36 },
+  container: { flexGrow: 1, paddingHorizontal: 20, paddingTop: 20, paddingBottom: 40 },
 
-  headingWrap: { marginBottom: 20, marginTop: 8 },
-  title: { fontSize: 24, fontWeight: '900', letterSpacing: -0.4 },
-  subtitle: { fontSize: 14, marginTop: 4, lineHeight: 20 },
-
-  roleSectionLabel: {
-    fontSize: 14,
-    fontWeight: '800',
-    marginBottom: 10,
-    textTransform: 'uppercase',
-    letterSpacing: 0.5,
-  },
-  roleSelectorRow: {
-    flexDirection: 'row',
-    gap: 12,
-    marginBottom: 20,
-  },
-  roleCard: {
-    borderRadius: 16,
-    borderWidth: 1.5,
-    flex: 1,
-    padding: 14,
-    position: 'relative',
-  },
-  roleIconBox: {
-    alignItems: 'center',
+  // Role segmented control
+  segment: {
     borderRadius: 12,
+    flexDirection: 'row',
+    padding: 4,
+  },
+  segmentItem: {
+    alignItems: 'center',
+    borderColor: 'transparent',
+    borderRadius: 9,
+    borderWidth: StyleSheet.hairlineWidth,
+    flex: 1,
+    flexDirection: 'row',
+    gap: 8,
     height: 42,
     justifyContent: 'center',
-    marginBottom: 10,
-    width: 42,
   },
-  roleTitle: {
-    fontSize: 16,
-    fontWeight: '800',
-  },
-  roleSub: {
-    fontSize: 11,
-    lineHeight: 15,
-    marginTop: 3,
-  },
-  radioDot: {
-    alignItems: 'center',
-    borderRadius: 9,
-    borderWidth: 1.5,
-    height: 18,
-    justifyContent: 'center',
-    position: 'absolute',
-    right: 12,
-    top: 12,
-    width: 18,
-  },
-  radioInner: {
-    borderRadius: 5,
-    height: 10,
-    width: 10,
-  },
+  segmentText: { fontSize: 15, fontWeight: '500' },
+  segmentTextActive: { fontWeight: '700' },
+  roleCaption: { fontSize: 13, lineHeight: 19, marginTop: 10 },
 
-  form: { gap: 16 },
+  // Sections
+  section: { marginTop: 28 },
+  sectionTitle: { fontSize: 17, fontWeight: '700', letterSpacing: -0.2 },
+  sectionBody: { gap: 16, marginTop: 14 },
+
+  // Fields
+  fieldStack: { gap: 16 },
   fieldGroup: { gap: 6 },
-  label: { fontSize: 13, fontWeight: '700' },
-
+  label: { fontSize: 13, fontWeight: '600' },
   inputWrap: {
     alignItems: 'center',
-    borderRadius: 14,
-    borderWidth: 1.5,
+    borderRadius: 12,
+    borderWidth: 1,
     flexDirection: 'row',
-    minHeight: 52,
+    minHeight: 50,
     paddingHorizontal: 14,
   },
-  input: { flex: 1, fontSize: 14, paddingVertical: 12 },
+  inputWrapTop: { alignItems: 'flex-start' },
   leftIcon: { marginRight: 10 },
-  statusIcon: { marginLeft: 6, marginRight: 4 },
+  leftIconTop: { marginTop: 15 },
+  prefix: { fontSize: 15, fontWeight: '600', marginRight: 6 },
+  input: { flex: 1, fontSize: 15, paddingVertical: 12 },
+  bioInput: { height: 110, paddingTop: 13, textAlignVertical: 'top' },
+  selectValue: { flex: 1, fontSize: 15, paddingVertical: 12 },
+  helperRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 8 },
+  errorText: { fontSize: 12, lineHeight: 16 },
+  counter: { fontSize: 12, lineHeight: 16 },
 
-  inlineErrorRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 2 },
-  error: { fontSize: 12, fontWeight: '600' },
+  // Password strength
+  strengthRow: { alignItems: 'center', flexDirection: 'row', gap: 10, marginTop: -6 },
+  strengthBars: { flex: 1, flexDirection: 'row', gap: 4 },
+  strengthBar: { borderRadius: 2, flex: 1, height: 4 },
+  strengthLabel: { fontSize: 12, fontWeight: '600', minWidth: 52, textAlign: 'right' },
 
-  bannerError: {
-    alignItems: 'center',
-    borderRadius: 12,
-    flexDirection: 'row',
-    gap: 8,
-    padding: 12,
-  },
-  bannerErrorText: { flex: 1, fontSize: 13, fontWeight: '600' },
-
-  tutorExtraBox: {
-    borderRadius: 16,
-    borderWidth: 1,
-    gap: 14,
-    padding: 16,
-  },
-  tutorHeader: {
-    alignItems: 'center',
-    flexDirection: 'row',
-    gap: 8,
-    marginBottom: 4,
-  },
-  tutorHeaderTitle: { fontSize: 14, fontWeight: '800' },
-  subjectPillsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-    marginTop: 4,
-  },
-  subjectPill: {
-    borderRadius: 10,
-    borderWidth: 1,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
-  },
-  subjectPillText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-
-  termsRow: { alignItems: 'center', flexDirection: 'row', gap: 10, marginTop: 6 },
+  // Terms
+  termsRow: { alignItems: 'flex-start', flexDirection: 'row', gap: 12, marginTop: 28 },
   checkbox: {
     alignItems: 'center',
     borderRadius: 6,
     borderWidth: 1.5,
-    height: 20,
+    height: 22,
     justifyContent: 'center',
-    width: 20,
+    marginTop: 1,
+    width: 22,
   },
-  termsText: { flex: 1, fontSize: 12, lineHeight: 18 },
-  termsHighlight: { fontWeight: '700' },
+  termsText: { flex: 1, fontSize: 13, lineHeight: 20 },
+  termsLink: { fontWeight: '600' },
+  termsError: { marginLeft: 34, marginTop: 6 },
 
+  // Banner
+  banner: {
+    alignItems: 'flex-start',
+    borderRadius: 12,
+    flexDirection: 'row',
+    gap: 10,
+    marginTop: 20,
+    padding: 12,
+  },
+  bannerText: { flex: 1, fontSize: 13, fontWeight: '500', lineHeight: 18 },
+
+  // Primary action
   primaryButton: {
     alignItems: 'center',
-    borderRadius: 14,
-    flexDirection: 'row',
-    gap: 8,
+    borderRadius: 12,
     height: 52,
     justifyContent: 'center',
-    marginTop: 8,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.18,
-    shadowRadius: 8,
+    marginTop: 24,
   },
+  primaryButtonText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   buttonDisabled: { opacity: 0.7 },
-  primaryButtonText: { color: '#FFFFFF', fontSize: 15, fontWeight: '800' },
+  pressed: { opacity: 0.88 },
 
-  bottomPrompt: { alignItems: 'center', flexDirection: 'row', justifyContent: 'center', marginTop: 28 },
+  bottomPrompt: { alignItems: 'center', flexDirection: 'row', justifyContent: 'center', marginTop: 24 },
   promptText: { fontSize: 14 },
-  linkText: { fontSize: 14, fontWeight: '800' },
-  pressed: { opacity: 0.85 },
+  linkText: { fontSize: 14, fontWeight: '700' },
+
+  // Bottom sheet
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { ...StyleSheet.absoluteFillObject, backgroundColor: 'rgba(0,0,0,0.45)' },
+  sheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    maxHeight: '75%',
+    paddingTop: 8,
+  },
+  sheetHandle: { alignSelf: 'center', borderRadius: 2, height: 4, marginBottom: 8, width: 36 },
+  sheetHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingBottom: 12,
+    paddingHorizontal: 20,
+    paddingTop: 4,
+  },
+  sheetTitle: { fontSize: 17, fontWeight: '700' },
+  sheetList: { flexGrow: 0 },
+  separator: { height: StyleSheet.hairlineWidth, marginHorizontal: 20 },
+  option: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    minHeight: 52,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  optionText: { flex: 1, fontSize: 15, paddingRight: 12 },
+  optionTextSelected: { fontWeight: '700' },
 })

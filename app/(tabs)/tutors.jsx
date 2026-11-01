@@ -1,8 +1,8 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
-import { addDoc, collection, onSnapshot, query, serverTimestamp, where } from 'firebase/firestore'
+import { router } from 'expo-router'
+import { collection, onSnapshot, query, where } from 'firebase/firestore'
 import React, { useEffect, useMemo, useState } from 'react'
 import {
-  Alert,
   ActivityIndicator,
   FlatList,
   Image,
@@ -28,18 +28,6 @@ export default function TutorsScreen() {
   const [tutors, setTutors] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-
-  // Booking Modal State
-  const [bookingTutor, setBookingTutor] = useState(null)
-  const [selectedSlot, setSelectedSlot] = useState(null)
-  const [bookingConfirmed, setBookingConfirmed] = useState(false)
-  const [submittingBooking, setSubmittingBooking] = useState(false)
-
-  // Message Modal State
-  const [messagingTutor, setMessagingTutor] = useState(null)
-  const [messageText, setMessageText] = useState('')
-  const [messageSent, setMessageSent] = useState(false)
-  const [sendingMessage, setSendingMessage] = useState(false)
 
   // Profile Details Modal State
   const [activeProfile, setActiveProfile] = useState(null)
@@ -118,76 +106,18 @@ export default function TutorsScreen() {
     })
   }, [tutors, selectedCategory, searchQuery])
 
-  const handleOpenBooking = (tutor) => {
-    setBookingTutor(tutor)
-    setSelectedSlot(tutor.slots[0] || null)
-    setBookingConfirmed(false)
-  }
-
-  const handleConfirmBooking = async () => {
-    if (!bookingTutor || !selectedSlot) return
-    if (!auth.currentUser) {
-      Alert.alert('Sign In Required', 'Please sign in before requesting a tutoring session.')
-      return
-    }
-    setSubmittingBooking(true)
-    try {
-      await addDoc(collection(db, 'bookings'), {
-        userId: auth.currentUser.uid,
-        userEmail: auth.currentUser.email || null,
-        userName: auth.currentUser.displayName || null,
-        tutorId: bookingTutor.id,
-        tutorName: bookingTutor.name,
-        subject: bookingTutor.subject || null,
-        hourlyRate: bookingTutor.hourlyRate,
-        slot: selectedSlot,
-        status: 'pending',
-        createdAt: serverTimestamp(),
-      })
-      setBookingConfirmed(true)
-      setTimeout(() => {
-        setBookingTutor(null)
-        setSubmittingBooking(false)
-      }, 1500)
-    } catch (err) {
-      console.log('Booking error:', err)
-      Alert.alert('Booking Not Sent', 'The booking request could not be saved. Please try again.')
-      setSubmittingBooking(false)
-    }
-  }
-
   const handleOpenMessaging = (tutor) => {
-    setMessagingTutor(tutor)
-    setMessageText('')
-    setMessageSent(false)
-  }
-
-  const handleSendMessage = async () => {
-    if (!messageText.trim() || !messagingTutor) return
     if (!auth.currentUser) {
-      Alert.alert('Sign In Required', 'Please sign in before messaging a tutor.')
       return
     }
-    setSendingMessage(true)
-    try {
-      await addDoc(collection(db, 'messages'), {
-        senderId: auth.currentUser.uid,
-        senderName: auth.currentUser.displayName || null,
-        recipientId: messagingTutor.id,
-        recipientName: messagingTutor.name,
-        text: messageText.trim(),
-        createdAt: serverTimestamp(),
-      })
-      setMessageSent(true)
-      setTimeout(() => {
-        setMessagingTutor(null)
-        setSendingMessage(false)
-      }, 1400)
-    } catch (err) {
-      console.log('Send message error:', err)
-      Alert.alert('Message Not Sent', 'Your message could not be saved. Please try again.')
-      setSendingMessage(false)
-    }
+
+    router.push({
+      pathname: '/chat',
+      params: {
+        tutorId: tutor.id,
+        tutorName: tutor.name,
+      },
+    })
   }
 
   return (
@@ -197,7 +127,7 @@ export default function TutorsScreen() {
       <Header
         showBack={false}
         title="Find a Tutor"
-        subtitle="1-on-1 personalized academic sessions"
+        subtitle="Chat with expert tutors"
       />
 
       {/* Search Input Bar */}
@@ -438,7 +368,7 @@ export default function TutorsScreen() {
                 ))}
               </View>
 
-              {/* Action Buttons: Message & Book Session */}
+              {/* Action Button: Message */}
               <View
                 style={[
                   styles.cardActions,
@@ -460,274 +390,11 @@ export default function TutorsScreen() {
                     Message
                   </Text>
                 </Pressable>
-
-                <Pressable
-                  style={[styles.actionBtnPrimary, { backgroundColor: colors.primary }]}
-                  onPress={() => handleOpenBooking(item)}
-                >
-                  <Ionicons name="calendar-outline" size={17} color="#FFFFFF" />
-                  <Text style={styles.actionBtnPriText}>Book 1-on-1</Text>
-                </Pressable>
               </View>
             </Pressable>
           )}
         />
       )}
-
-      {/* BOOKING MODAL */}
-      <Modal visible={!!bookingTutor} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalSheet,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            {bookingConfirmed ? (
-              <View style={styles.confirmState}>
-                <View
-                  style={[
-                    styles.successCircle,
-                    { backgroundColor: isDark ? '#14331C' : '#DCFCE7' },
-                  ]}
-                >
-                  <Ionicons name="checkmark-done" size={42} color={colors.primary} />
-                </View>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>
-                  Booking Request Sent
-                </Text>
-                <Text style={[styles.modalSub, { color: colors.textMuted }]}>
-                  Your booking request for {bookingTutor?.name} was saved for{' '}
-                  <Text style={{ fontWeight: '700', color: colors.text }}>
-                    {selectedSlot}
-                  </Text>
-                  . The tutor will need to confirm the session details.
-                </Text>
-              </View>
-            ) : (
-              <>
-                <View style={styles.sheetHeader}>
-                  <View>
-                    <Text style={[styles.modalTitle, { color: colors.text }]}>
-                      Book Tutoring Session
-                    </Text>
-                    <Text style={[styles.modalSub, { color: colors.textMuted }]}>
-                      with {bookingTutor?.name}
-                    </Text>
-                  </View>
-                  <Pressable onPress={() => setBookingTutor(null)}>
-                    <Ionicons name="close-circle" size={26} color={colors.textMuted} />
-                  </Pressable>
-                </View>
-
-                {/* Tutor Card in Modal */}
-                <View
-                  style={[
-                    styles.modalTutorPreview,
-                    {
-                      backgroundColor: isDark ? '#1C2920' : '#F8FAF8',
-                      borderColor: colors.border,
-                    },
-                  ]}
-                >
-                  {bookingTutor?.avatar ? (
-                    <Image source={{ uri: bookingTutor.avatar }} style={styles.miniAvatar} />
-                  ) : null}
-                  <View style={{ flex: 1 }}>
-                    <Text style={[styles.miniName, { color: colors.text }]}>
-                      {bookingTutor?.name}
-                    </Text>
-                    <Text style={[styles.miniSubject, { color: colors.textMuted }]}>
-                      {[bookingTutor?.subject, bookingTutor?.hourlyRate != null ? `₦${bookingTutor.hourlyRate.toLocaleString()}/hr` : null].filter(Boolean).join(' • ')}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Slot Selector */}
-                <Text style={[styles.slotSelectHeading, { color: colors.text }]}>
-                  Available Time Slots
-                </Text>
-                <View style={styles.slotsList}>
-                  {bookingTutor?.slots.length ? bookingTutor.slots.map((slot, index) => {
-                    const isPicked = selectedSlot === slot
-                    return (
-                      <Pressable
-                        key={index}
-                        style={[
-                          styles.slotButton,
-                          {
-                            backgroundColor: isPicked
-                              ? colors.primary
-                              : isDark
-                              ? '#1C2920'
-                              : '#F9FAFB',
-                            borderColor: isPicked ? colors.primary : colors.border,
-                          },
-                        ]}
-                        onPress={() => setSelectedSlot(slot)}
-                      >
-                        <Ionicons
-                          name={isPicked ? 'radio-button-on' : 'radio-button-off'}
-                          size={16}
-                          color={isPicked ? '#FFFFFF' : colors.textMuted}
-                        />
-                        <Text
-                          style={[
-                            styles.slotButtonText,
-                            {
-                              color: isPicked
-                                ? '#FFFFFF'
-                                : isDark
-                                ? colors.text
-                                : '#374151',
-                              fontWeight: isPicked ? '700' : '500',
-                            },
-                          ]}
-                        >
-                          {slot}
-                        </Text>
-                      </Pressable>
-                    )
-                  }) : (
-                    <Text style={[styles.modalSub, { color: colors.textMuted }]}>No availability has been provided.</Text>
-                  )}
-                </View>
-
-                {/* Action Buttons */}
-                <View style={styles.sheetActions}>
-                  <Pressable
-                    style={[
-                      styles.cancelSheetBtn,
-                      { borderColor: colors.border },
-                    ]}
-                    onPress={() => setBookingTutor(null)}
-                  >
-                    <Text style={[styles.cancelSheetBtnText, { color: colors.textMuted }]}>
-                      Cancel
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.confirmSheetBtn,
-                      { backgroundColor: colors.primary },
-                    ]}
-                    onPress={handleConfirmBooking}
-                    disabled={submittingBooking || !selectedSlot}
-                  >
-                    {submittingBooking ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.confirmSheetBtnText}>
-                        {bookingTutor?.hourlyRate != null ? `Request Session (₦${bookingTutor.hourlyRate.toLocaleString()})` : 'Request Session'}
-                      </Text>
-                    )}
-                  </Pressable>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
-
-      {/* MESSAGING MODAL */}
-      <Modal visible={!!messagingTutor} animationType="slide" transparent>
-        <View style={styles.modalOverlay}>
-          <View
-            style={[
-              styles.modalSheet,
-              { backgroundColor: colors.card, borderColor: colors.border },
-            ]}
-          >
-            {messageSent ? (
-              <View style={styles.confirmState}>
-                <View
-                  style={[
-                    styles.successCircle,
-                    { backgroundColor: isDark ? '#14331C' : '#DCFCE7' },
-                  ]}
-                >
-                  <Ionicons name="paper-plane" size={40} color={colors.primary} />
-                </View>
-                <Text style={[styles.modalTitle, { color: colors.text }]}>
-                  Message Sent
-                </Text>
-                <Text style={[styles.modalSub, { color: colors.textMuted }]}>
-                  Your message to {messagingTutor?.name} has been saved.
-                </Text>
-              </View>
-            ) : (
-              <>
-                <View style={styles.sheetHeader}>
-                  <View>
-                    <Text style={[styles.modalTitle, { color: colors.text }]}>
-                      Message Tutor
-                    </Text>
-                    <Text style={[styles.modalSub, { color: colors.textMuted }]}>
-                      Ask questions before booking a class
-                    </Text>
-                  </View>
-                  <Pressable onPress={() => setMessagingTutor(null)}>
-                    <Ionicons name="close-circle" size={26} color={colors.textMuted} />
-                  </Pressable>
-                </View>
-
-                <TextInput
-                  placeholder={`Hi ${
-                    messagingTutor?.name?.split(' ')[0] || 'Tutor'
-                  }, I'd like to ask about your preparation sessions...`}
-                  placeholderTextColor={colors.textMuted}
-                  multiline
-                  numberOfLines={4}
-                  style={[
-                    styles.messageInput,
-                    {
-                      backgroundColor: colors.inputBg,
-                      borderColor: colors.border,
-                      color: colors.text,
-                    },
-                  ]}
-                  value={messageText}
-                  onChangeText={setMessageText}
-                />
-
-                <View style={styles.sheetActions}>
-                  <Pressable
-                    style={[
-                      styles.cancelSheetBtn,
-                      { borderColor: colors.border },
-                    ]}
-                    onPress={() => setMessagingTutor(null)}
-                  >
-                    <Text style={[styles.cancelSheetBtnText, { color: colors.textMuted }]}>
-                      Cancel
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[
-                      styles.confirmSheetBtn,
-                      {
-                        backgroundColor: messageText.trim()
-                          ? colors.primary
-                          : isDark
-                          ? '#233228'
-                          : '#D1D5DB',
-                      },
-                    ]}
-                    onPress={handleSendMessage}
-                    disabled={!messageText.trim() || sendingMessage}
-                  >
-                    {sendingMessage ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.confirmSheetBtnText}>Send Message</Text>
-                    )}
-                  </Pressable>
-                </View>
-              </>
-            )}
-          </View>
-        </View>
-      </Modal>
 
       {/* FULL TUTOR PROFILE MODAL */}
       <Modal visible={!!activeProfile} animationType="slide">
@@ -865,17 +532,6 @@ export default function TutorsScreen() {
                     <Text style={[styles.modalSecBtnText, { color: colors.primary }]}>
                       Message
                     </Text>
-                  </Pressable>
-
-                  <Pressable
-                    style={[styles.modalPriBtn, { backgroundColor: colors.primary }]}
-                    onPress={() => {
-                      const t = activeProfile
-                      setActiveProfile(null)
-                      handleOpenBooking(t)
-                    }}
-                  >
-                    <Text style={styles.modalPriBtnText}>Book 1-on-1</Text>
                   </Pressable>
                 </View>
               </>

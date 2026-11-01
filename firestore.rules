@@ -23,6 +23,15 @@ service cloud.firestore {
         && getUser(request.auth.uid).approved == true;
     }
 
+    function hasCoursePurchase(courseId) {
+      let enrollmentPath = /databases/$(database)/documents/enrollments/$(request.auth.uid + '_' + courseId);
+      return isSignedIn()
+        && exists(enrollmentPath)
+        && get(enrollmentPath).data.userId == request.auth.uid
+        && get(enrollmentPath).data.courseId == courseId
+        && get(enrollmentPath).data.status == 'active';
+    }
+
     match /users/{userId} {
       allow create: if isSignedIn()
         && request.auth.uid == userId
@@ -57,10 +66,11 @@ service cloud.firestore {
         && request.resource.data.createdAt is timestamp;
       allow update: if isSignedIn()
         && (isAdmin()
-          || (request.auth.uid == resource.data.createdBy
+          || (resource.data.get('deletionStatus', '') != 'deleting'
+            && request.resource.data.get('deletionStatus', '') == resource.data.get('deletionStatus', '')
+            && request.auth.uid == resource.data.createdBy
             && request.resource.data.createdBy == resource.data.createdBy));
-      allow delete: if isSignedIn()
-        && (isAdmin() || request.auth.uid == resource.data.createdBy);
+      allow delete: if false;
     }
 
     match /courses/{courseId} {
@@ -74,10 +84,34 @@ service cloud.firestore {
         && request.resource.data.createdAt is timestamp;
       allow update: if isSignedIn()
         && (isAdmin()
-          || (request.auth.uid == resource.data.createdBy
+          || (resource.data.get('deletionStatus', '') != 'deleting'
+            && request.resource.data.get('deletionStatus', '') == resource.data.get('deletionStatus', '')
+            && request.auth.uid == resource.data.createdBy
             && request.resource.data.createdBy == resource.data.createdBy));
-      allow delete: if isSignedIn()
-        && (isAdmin() || request.auth.uid == resource.data.createdBy);
+      allow delete: if false;
+
+      match /reviews/{reviewId} {
+        allow read: if true;
+        allow create, update: if hasCoursePurchase(courseId)
+          && reviewId == request.auth.uid
+          && request.resource.data.keys().hasOnly([
+            'courseId', 'userId', 'authorName', 'rating', 'comment', 'createdAt', 'updatedAt'
+          ])
+          && request.resource.data.courseId == courseId
+          && request.resource.data.userId == request.auth.uid
+          && request.resource.data.authorName is string
+          && request.resource.data.authorName.size() > 0
+          && request.resource.data.authorName.size() <= 80
+          && request.resource.data.rating is int
+          && request.resource.data.rating >= 1
+          && request.resource.data.rating <= 5
+          && request.resource.data.comment is string
+          && request.resource.data.comment.size() > 0
+          && request.resource.data.comment.size() <= 1000
+          && request.resource.data.createdAt is timestamp
+          && request.resource.data.updatedAt is timestamp;
+        allow delete: if false;
+      }
     }
 
     match /enrollments/{enrollmentId} {
