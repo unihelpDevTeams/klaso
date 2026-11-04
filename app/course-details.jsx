@@ -15,7 +15,6 @@ import {
 import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -28,10 +27,27 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../firebase/config'
 import { useTheme } from '../context/ThemeContext'
+import { useAppDialog } from '../context/AppDialogContext'
 import { checkTutorialPurchase, initializePayment } from '../services/paymentService'
+
+function formatDate(value) {
+  const date = value?.toDate ? value.toDate() : value ? new Date(value) : null
+  if (!date || Number.isNaN(date.getTime())) return ''
+  return date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' })
+}
+
+function numericValue(value) {
+  const parsed = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && value.trim()
+      ? Number(value)
+      : NaN
+  return Number.isFinite(parsed) ? parsed : null
+}
 
 export default function CourseDetailsScreen() {
   const router = useRouter()
+  const showAlert = useAppDialog()
   const params = useLocalSearchParams()
   const { colors, isDark } = useTheme()
 
@@ -69,24 +85,29 @@ export default function CourseDetailsScreen() {
 
         const data = docSnap.data()
         let curriculum = Array.isArray(data.curriculum) ? data.curriculum : []
+        let primaryLesson = null
 
-        if (curriculum.length === 0 && data.lessonId) {
+        if (data.lessonId) {
           const lessonSnapshot = await getDoc(doc(db, 'lessons', data.lessonId))
           if (lessonSnapshot.exists()) {
             const lesson = lessonSnapshot.data()
-            curriculum = [{
-              id: lessonSnapshot.id,
-              title: lesson.title,
-              description: lesson.description,
-              duration: lesson.duration,
-              isFree: lesson.isFree === true,
-              videoUrl: lesson.videoUrl,
-            }]
+            primaryLesson = lesson
+            if (curriculum.length === 0) {
+              curriculum = [{
+                id: lessonSnapshot.id,
+                title: lesson.title,
+                description: lesson.description,
+                duration: lesson.duration,
+                isFree: lesson.isFree === true,
+                videoUrl: lesson.videoUrl,
+              }]
+            }
           }
         } else if (curriculum.length === 0) {
           const lessonSnapshot = await getDocs(
             query(collection(db, 'lessons'), where('courseId', '==', courseId))
           )
+          primaryLesson = lessonSnapshot.docs[0]?.data() || null
           curriculum = lessonSnapshot.docs.map((lessonDoc) => {
             const lesson = lessonDoc.data()
             return {
@@ -98,6 +119,25 @@ export default function CourseDetailsScreen() {
               videoUrl: lesson.videoUrl,
             }
           })
+        }
+
+        const embeddedTutor =
+          typeof data.tutor === 'string'
+            ? { name: data.tutor }
+            : data.tutor && typeof data.tutor === 'object'
+              ? data.tutor
+              : {}
+        const tutorId = data.createdBy || embeddedTutor.uid || embeddedTutor.id || ''
+        let tutorProfile = null
+        if (tutorId) {
+          try {
+            const tutorSnapshot = await getDoc(doc(db, 'tutorProfiles', tutorId))
+            if (tutorSnapshot.exists() && tutorSnapshot.data().approved === true) {
+              tutorProfile = tutorSnapshot.data()
+            }
+          } catch (profileError) {
+            console.error('Unable to load public tutor profile:', profileError)
+          }
         }
 
         if (!active) return
@@ -122,12 +162,20 @@ export default function CourseDetailsScreen() {
           setPurchaseStatus({ checking: false, purchased: false, hasAccess: false })
         }
 
-        const tutor =
-          typeof data.tutor === 'string'
-            ? { name: data.tutor }
-            : data.tutor && typeof data.tutor === 'object'
-              ? data.tutor
-              : null
+        const tutor = {
+          ...embeddedTutor,
+          uid: tutorId,
+          name: tutorProfile?.name || embeddedTutor.name || (tutorId ? 'Tutor' : ''),
+          avatar: tutorProfile?.photoURL || embeddedTutor.avatar || '',
+          bio: tutorProfile?.bio || embeddedTutor.bio || '',
+          subject: tutorProfile?.subject || embeddedTutor.subject || '',
+          education: tutorProfile?.education || embeddedTutor.education || '',
+          experience: tutorProfile?.experience || embeddedTutor.experience || '',
+          hourlyRate: tutorProfile?.hourlyRate ?? embeddedTutor.hourlyRate ?? null,
+          rating: tutorProfile?.rating ?? embeddedTutor.rating ?? null,
+          reviewsCount: tutorProfile?.reviewsCount ?? embeddedTutor.reviewsCount ?? null,
+          verified: tutorProfile?.approved === true || embeddedTutor.verified === true,
+        }
         const parsedPrice =
           typeof data.price === 'number'
             ? data.price
@@ -145,20 +193,28 @@ export default function CourseDetailsScreen() {
         setCourse({
           id: docSnap.id,
           title: data.title || params.title || '',
-          headline: data.headline || data.description || '',
+          headline: data.headline || data.description || primaryLesson?.description || '',
           subject: data.subject || '',
           level: data.level || '',
-          rating: Number.isFinite(data.rating) ? data.rating : null,
-          reviewsCount: Number.isFinite(data.reviewsCount) ? data.reviewsCount : null,
-          studentsCount: data.studentsCount ?? null,
+          rating: numericValue(data.rating),
+          reviewsCount: numericValue(data.reviewsCount),
+          studentsCount: numericValue(data.studentsCount),
           duration: data.duration || '',
+          publishedAt: data.createdAt || null,
           videoUrl: data.videoUrl || '',
           lessonsCount: typeof data.lessonsCount === 'number' ? data.lessonsCount : curriculum.length,
           price,
           originalPrice: Number.isFinite(parsedOriginalPrice) ? parsedOriginalPrice : null,
           image: data.thumbnailUrl || data.image || '',
           tutor,
-          learningPoints: Array.isArray(data.learningPoints) ? data.learningPoints : [],
+          hashtags: Array.isArray(data.hashtags)
+            ? data.hashtags.filter((tag) => typeof tag === 'string' && tag.trim())
+            : Array.isArray(primaryLesson?.hashtags)
+              ? primaryLesson.hashtags.filter((tag) => typeof tag === 'string' && tag.trim())
+              : [],
+          learningPoints: Array.isArray(data.learningPoints)
+            ? data.learningPoints.filter((point) => typeof point === 'string' && point.trim())
+            : [],
           curriculum,
         })
       } catch (error) {
@@ -209,7 +265,7 @@ export default function CourseDetailsScreen() {
 
   const handleBookmark = async () => {
     if (!auth.currentUser) {
-      Alert.alert('Sign In Required', 'Please sign in to save courses to your wishlist.')
+      showAlert('Sign in to save this tutorial', 'Sign in to add this tutorial to your saved list.')
       return
     }
 
@@ -229,7 +285,7 @@ export default function CourseDetailsScreen() {
         const deletes = snap.docs.map((d) => deleteDoc(doc(db, 'saved_courses', d.id)))
         await Promise.all(deletes)
         setIsBookmarked(false)
-        Alert.alert('Removed', 'Course removed from your saved list.')
+        showAlert('Removed from saved tutorials', 'This tutorial has been removed from your saved list.')
       } else {
         // Add bookmark
         await addDoc(collection(db, 'saved_courses'), {
@@ -244,10 +300,12 @@ export default function CourseDetailsScreen() {
           createdAt: serverTimestamp(),
         })
         setIsBookmarked(true)
-        Alert.alert('Saved! 🔖', 'Course added to your Saved list in My Learning tab.')
+        showAlert('Tutorial saved', 'You can find this tutorial in My Learning.')
       }
-    } catch (_err) {
+    } catch (error) {
+      console.error('Unable to update saved tutorial:', error)
       setIsBookmarked(!isBookmarked)
+      showAlert('Couldn’t update saved tutorials', 'Please try again in a moment.')
     } finally {
       setSavingBookmark(false)
     }
@@ -271,7 +329,7 @@ export default function CourseDetailsScreen() {
   const handleEnroll = async () => {
     if (!course) return
     if (!auth.currentUser) {
-      Alert.alert('Sign In Required', 'Please sign in to purchase this tutorial.')
+      showAlert('Sign in to continue', 'Sign in to purchase this tutorial.')
       return
     }
 
@@ -284,7 +342,7 @@ export default function CourseDetailsScreen() {
     }
 
     if (typeof course.price !== 'number' || course.price < 0) {
-      Alert.alert('Price unavailable', 'The tutor has not set a price for this course yet.')
+      showAlert('Price not available', 'The tutor hasn’t set a price for this tutorial yet.')
       return
     }
 
@@ -294,7 +352,7 @@ export default function CourseDetailsScreen() {
     try {
       const result = await initializePayment(course.id)
       if (!result.checkoutUrl) {
-        throw new Error('Flutterwave did not return a checkout link.')
+        throw new Error('Checkout link is unavailable.')
       }
 
       await WebBrowser.openBrowserAsync(result.checkoutUrl, {
@@ -303,13 +361,14 @@ export default function CourseDetailsScreen() {
         toolbarColor: '#0B110D',
       })
 
-      Alert.alert(
+      showAlert(
         'Checkout opened',
         'Complete the payment in your browser, then return to Klaso. We will verify the payment before unlocking access.'
       )
       await refreshPurchaseState()
     } catch (error) {
-      Alert.alert('Payment unavailable', error.message || 'Unable to start payment flow.')
+      console.error('Unable to start payment:', error)
+      showAlert('Payment couldn’t start', 'Please try again in a moment.')
     } finally {
       setProcessingPayment(false)
     }
@@ -511,44 +570,90 @@ export default function CourseDetailsScreen() {
             </View>
           )}
 
-          {/* Instructor Card */}
+          {/* Instructor Profile */}
           {course.tutor?.name && (
             <View
               style={[
-                styles.instructorBox,
+                styles.instructorCard,
                 { backgroundColor: colors.borderSubtle, borderColor: colors.border },
               ]}
             >
-              {course.tutor.avatar ? (
-                <Image source={{ uri: course.tutor.avatar }} style={styles.tutorAvatar} />
-              ) : (
-                <View style={[styles.tutorAvatarFallback, { backgroundColor: colors.primaryLight }]}>
-                  <Ionicons name="person-outline" size={20} color={colors.primary} />
-                </View>
-              )}
-              <View style={{ flex: 1 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <Text style={[styles.tutorName, { color: colors.text }]}>
-                    {course.tutor.name}
-                  </Text>
-                  {course.tutor.verified === true && (
-                    <Ionicons name="checkmark-circle" size={14} color={colors.primary} />
+              <Text style={[styles.instructorSectionTitle, { color: colors.text }]}>
+                Tutor profile
+              </Text>
+              <View style={styles.instructorHeader}>
+                {course.tutor.avatar ? (
+                  <Image source={{ uri: course.tutor.avatar }} style={styles.tutorAvatar} />
+                ) : (
+                  <View style={[styles.tutorAvatarFallback, { backgroundColor: colors.primaryLight }]}>
+                    <Ionicons name="person-outline" size={20} color={colors.primary} />
+                  </View>
+                )}
+                <View style={styles.instructorIdentity}>
+                  <View style={styles.instructorNameRow}>
+                    <Text style={[styles.tutorName, { color: colors.text }]} numberOfLines={1}>
+                      {course.tutor.name}
+                    </Text>
+                    {course.tutor.verified && (
+                      <Ionicons name="checkmark-circle" size={16} color={colors.primary} />
+                    )}
+                  </View>
+                  {!!(course.tutor.subject || course.tutor.education) && (
+                    <Text style={[styles.tutorTitle, { color: colors.textMuted }]} numberOfLines={2}>
+                      {[course.tutor.subject, course.tutor.education].filter(Boolean).join(' • ')}
+                    </Text>
+                  )}
+                  {course.tutor.rating !== null && course.tutor.rating !== undefined && (
+                    <Text style={[styles.tutorMeta, { color: colors.primary }]}>
+                      ★ {course.tutor.rating}
+                      {course.tutor.reviewsCount != null ? ` · ${course.tutor.reviewsCount} reviews` : ''}
+                    </Text>
                   )}
                 </View>
-                {!!course.tutor.title && (
-                  <Text style={[styles.tutorTitle, { color: colors.textMuted }]} numberOfLines={2}>
-                    {course.tutor.title}
-                  </Text>
-                )}
-                {(course.tutor.rating || course.tutor.students) && (
-                  <Text style={[styles.tutorMeta, { color: colors.primary }]}>
-                    {[
-                      course.tutor.rating && `★ ${course.tutor.rating} rating`,
-                      course.tutor.students && `${course.tutor.students} students`,
-                    ].filter(Boolean).join(' • ')}
-                  </Text>
-                )}
               </View>
+              {!!course.tutor.bio && (
+                <Text style={[styles.tutorBio, { color: colors.textSecondary }]}>
+                  {course.tutor.bio}
+                </Text>
+              )}
+              {!!course.tutor.experience && (
+                <View style={styles.instructorDetailRow}>
+                  <Ionicons name="briefcase-outline" size={16} color={colors.textMuted} />
+                  <Text style={[styles.instructorDetailText, { color: colors.textSecondary }]}>
+                    {course.tutor.experience}
+                  </Text>
+                </View>
+              )}
+              {course.tutor.hourlyRate != null && (
+                <View style={styles.instructorDetailRow}>
+                  <Ionicons name="cash-outline" size={16} color={colors.textMuted} />
+                  <Text style={[styles.instructorDetailText, { color: colors.textSecondary }]}>
+                    ₦{Number(course.tutor.hourlyRate).toLocaleString('en-NG')} per hour
+                  </Text>
+                </View>
+              )}
+              {course.tutor.uid && course.tutor.uid !== auth.currentUser?.uid && (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Message ${course.tutor.name}`}
+                  onPress={() => {
+                    if (!auth.currentUser) {
+                      showAlert('Sign in to message this tutor', 'Sign in to start a conversation with the tutorial’s tutor.')
+                      return
+                    }
+                    router.push({
+                      pathname: '/chat',
+                      params: { tutorId: course.tutor.uid, tutorName: course.tutor.name },
+                    })
+                  }}
+                  style={[styles.messageTutorButton, { backgroundColor: colors.primaryLight }]}
+                >
+                  <Ionicons name="chatbubble-outline" size={17} color={colors.primary} />
+                  <Text style={[styles.messageTutorText, { color: colors.primary }]}>
+                    Message tutor
+                  </Text>
+                </Pressable>
+              )}
             </View>
           )}
 
@@ -631,8 +736,33 @@ export default function CourseDetailsScreen() {
                 </>
               ) : (
                 <Text style={[styles.emptyDetailsText, { color: colors.textMuted }]}>
-                  The tutor has not added course outcomes yet.
+                  The tutor hasn’t added learning outcomes yet.
                 </Text>
+              )}
+              {course.hashtags.length > 0 && (
+                <View style={styles.topicSection}>
+                  <Text style={[styles.sectionHeading, { color: colors.text }]}>Topics covered</Text>
+                  <View style={styles.topicList}>
+                    {course.hashtags.map((tag, index) => (
+                      <View
+                        key={`${tag}-${index}`}
+                        style={[styles.topicChip, { backgroundColor: colors.primaryLight }]}
+                      >
+                        <Text style={[styles.topicText, { color: colors.primary }]}>
+                          {String(tag).replace(/^#/, '')}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              )}
+              {course.publishedAt && (
+                <View style={styles.publishedRow}>
+                  <Ionicons name="calendar-outline" size={16} color={colors.textMuted} />
+                  <Text style={[styles.publishedText, { color: colors.textMuted }]}>
+                    Published {formatDate(course.publishedAt)}
+                  </Text>
+                </View>
               )}
             </View>
           )}
@@ -668,7 +798,7 @@ export default function CourseDetailsScreen() {
                         } else if (purchaseStatus.purchased || canEnroll) {
                           handleEnroll()
                         } else {
-                          Alert.alert('Lesson unavailable', 'This course does not have a price or an accessible preview yet.')
+                          showAlert('Lesson not available', 'This lesson is not available for preview. Enrol in the tutorial to continue.')
                         }
                       }}
                     >
@@ -936,14 +1066,29 @@ const styles = StyleSheet.create({
     height: 20,
   },
 
-  instructorBox: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
+  instructorCard: {
     borderRadius: 14,
     borderWidth: 1,
-    padding: 14,
+    gap: 12,
     marginBottom: 18,
+    padding: 14,
+  },
+  instructorHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 12,
+  },
+  instructorSectionTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  instructorIdentity: {
+    flex: 1,
+  },
+  instructorNameRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 6,
   },
   tutorAvatar: {
     width: 50,
@@ -970,6 +1115,33 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
     marginTop: 4,
+  },
+  tutorBio: {
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  instructorDetailRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+  instructorDetailText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  messageTutorButton: {
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    borderRadius: 10,
+    flexDirection: 'row',
+    gap: 7,
+    minHeight: 38,
+    paddingHorizontal: 12,
+  },
+  messageTutorText: {
+    fontSize: 12,
+    fontWeight: '700',
   },
 
   segmentedTabs: {
@@ -1006,6 +1178,32 @@ const styles = StyleSheet.create({
   },
   learningGrid: {
     gap: 10,
+  },
+  topicSection: {
+    gap: 8,
+  },
+  topicList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  topicChip: {
+    borderRadius: 14,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  topicText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  publishedRow: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: 7,
+    marginTop: 8,
+  },
+  publishedText: {
+    fontSize: 12,
   },
   emptyDetailsText: {
     fontSize: 13,

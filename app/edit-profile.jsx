@@ -3,7 +3,7 @@ import { File } from 'expo-file-system'
 import * as ImagePicker from 'expo-image-picker'
 import { useRouter } from 'expo-router'
 import { updateProfile } from 'firebase/auth'
-import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { doc, getDoc, serverTimestamp, writeBatch } from 'firebase/firestore'
 import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
@@ -19,6 +19,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../firebase/config'
 import { useTheme } from '../context/ThemeContext'
+import { createPublicTutorProfile } from '../services/tutorProfileService'
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'
 
@@ -135,18 +136,34 @@ export default function EditProfileScreen() {
         photoURL: avatarResult.url || auth.currentUser.photoURL || '',
       })
 
-      await updateDoc(doc(db, 'users', auth.currentUser.uid), {
+      const userRef = doc(db, 'users', auth.currentUser.uid)
+      const profileSnapshot = await getDoc(userRef)
+      const userData = profileSnapshot.exists() ? profileSnapshot.data() : {}
+      const profileUpdates = {
         displayName: profile.displayName.trim(),
         bio: profile.bio.trim(),
         photoURL: avatarResult.url || profile.avatarUrl || '',
         updatedAt: serverTimestamp(),
-      })
+      }
+      const batch = writeBatch(db)
+      batch.update(userRef, profileUpdates)
+      if (userData.role === 'tutor' && userData.approved === true) {
+        batch.set(
+          doc(db, 'tutorProfiles', auth.currentUser.uid),
+          {
+            ...createPublicTutorProfile(auth.currentUser.uid, { ...userData, ...profileUpdates }, true),
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        )
+      }
+      await batch.commit()
 
       setSuccess('Profile updated successfully.')
       setTimeout(() => router.back(), 800)
     } catch (saveError) {
-      console.log('Edit profile error:', saveError)
-      setError(saveError.message || 'Unable to update profile right now.')
+      console.error('Unable to update profile:', saveError)
+      setError('We couldn’t update your profile right now. Please try again.')
     } finally {
       setLoading(false)
     }

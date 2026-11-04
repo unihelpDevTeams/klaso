@@ -1,15 +1,17 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
 import React, { useEffect, useMemo, useState } from 'react'
-import { Alert, Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native'
+import { Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useTheme } from '../context/ThemeContext'
+import { useAppDialog } from '../context/AppDialogContext'
 import { verifyPayment } from '../services/paymentService'
 
 export default function CheckoutScreen() {
   const router = useRouter()
   const params = useLocalSearchParams()
   const { colors, isDark } = useTheme()
+  const showAlert = useAppDialog()
 
   const courseId = typeof params.id === 'string' ? params.id : ''
   const title = typeof params.title === 'string' ? params.title : ''
@@ -33,11 +35,12 @@ export default function CheckoutScreen() {
         if (!active) return
         setVerificationState({ loading: false, verified: Boolean(result.verified || result.ok), error: '' })
         if (result.verified) {
-          Alert.alert('Payment verified', 'Your tutorial access has been unlocked.')
+          showAlert('Payment confirmed', 'Your tutorial is now available in My Learning.')
         }
       } catch (error) {
         if (!active) return
-        setVerificationState({ loading: false, verified: false, error: error.message || 'Unable to verify your payment yet.' })
+        console.error('Unable to verify payment:', error)
+        setVerificationState({ loading: false, verified: false, error: 'We couldn’t verify your payment yet. Please check again shortly.' })
       }
     }
 
@@ -45,7 +48,7 @@ export default function CheckoutScreen() {
     return () => {
       active = false
     }
-  }, [txRef])
+  }, [txRef, showAlert])
 
   return (
     <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]}>

@@ -1,11 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useRouter } from 'expo-router'
 import { onAuthStateChanged } from 'firebase/auth'
-import { collection, doc, getDocs, runTransaction, serverTimestamp, updateDoc } from 'firebase/firestore'
+import { collection, doc, getDocs, runTransaction, serverTimestamp, writeBatch } from 'firebase/firestore'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   RefreshControl,
@@ -20,6 +19,8 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { auth, db } from '../firebase/config'
 import { verifyAdminAccess } from '../firebase/adminAccess'
 import { useTheme } from '../context/ThemeContext'
+import { useAppDialog } from '../context/AppDialogContext'
+import { createPublicTutorProfile } from '../services/tutorProfileService'
 
 /* ------------------------------------------------------------------ */
 /* Constants & helpers                                                 */
@@ -107,6 +108,7 @@ function tint(color, alpha = '1F') {
 export default function AdminPanel() {
   const router = useRouter()
   const { colors, isDark } = useTheme()
+  const showAlert = useAppDialog()
   const insets = useSafeAreaInsets()
 
   const [activeTab, setActiveTab] = useState('approvals')
@@ -235,9 +237,7 @@ export default function AdminPanel() {
         if (!active) return
         if (!isAdmin) {
           setAccessState('denied')
-          setAccessError(
-            'This account is not an administrator. Sign in with a verified email listed in the backend ADMIN_EMAILS setting.'
-          )
+          setAccessError('This account doesn’t have administrator access. Sign in with an authorized account.')
           setLoading(false)
           return
         }
@@ -247,7 +247,7 @@ export default function AdminPanel() {
         console.error('Unable to verify admin panel access:', error)
         if (active) {
           setAccessState('denied')
-          setAccessError(error.message || 'Unable to verify administrator access.')
+          setAccessError('We couldn’t verify administrator access. Please try again.')
           setLoading(false)
         }
       }
@@ -370,7 +370,8 @@ export default function AdminPanel() {
       )
       showToast('Withdrawal marked as paid.')
     } catch (error) {
-      Alert.alert('Payout update failed', error.message || 'Unable to record the payout settlement.')
+      console.error('Unable to record payout settlement:', error)
+      showAlert('Payout not updated', 'We couldn’t record this payout as paid. Please try again.')
     } finally {
       setBusyFlag(id, false)
     }
@@ -422,7 +423,8 @@ export default function AdminPanel() {
       )
       showToast('Withdrawal rejected and funds released back to the wallet.')
     } catch (error) {
-      Alert.alert('Payout rejected', error.message || 'Unable to reject this payout.')
+      console.error('Unable to reject payout:', error)
+      showAlert('Payout review not saved', 'We couldn’t complete the payout review. Please try again.')
     } finally {
       setBusyFlag(id, false)
     }
@@ -432,24 +434,31 @@ export default function AdminPanel() {
     if (busy[user.id]) return
     setBusyFlag(user.id, true)
     try {
-      await updateDoc(doc(db, 'users', user.id), {
+      const batch = writeBatch(db)
+      batch.update(doc(db, 'users', user.id), {
         approved: true,
         approvedAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
+      batch.set(doc(db, 'tutorProfiles', user.id), {
+        ...createPublicTutorProfile(user.id, user, true),
+        updatedAt: serverTimestamp(),
+      }, { merge: true })
+      await batch.commit()
       setAllUsers((curr) => curr.map((u) => (u.id === user.id ? { ...u, approved: true } : u)))
       showToast(`${user.displayName || 'Tutor'} approved and visible in the marketplace.`)
     } catch (error) {
-      Alert.alert('Approval not saved', error.message || 'Unable to update this tutor. Please try again.')
+      console.error('Unable to approve tutor:', error)
+      showAlert('Approval not saved', 'We couldn’t update this tutor’s application. Please try again.')
     } finally {
       setBusyFlag(user.id, false)
     }
   }
 
   function declineTutor(user) {
-    Alert.alert(
-      'Decline application',
-      `${user.displayName || 'This applicant'} will be moved back to a student account and removed from the review queue.`,
+    showAlert(
+      'Decline this application?',
+      `This will change ${user.displayName || 'this applicant'}’s account to a student account and remove the application from the review queue.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -458,17 +467,24 @@ export default function AdminPanel() {
           onPress: async () => {
             setBusyFlag(user.id, true)
             try {
-              await updateDoc(doc(db, 'users', user.id), {
+              const batch = writeBatch(db)
+              batch.update(doc(db, 'users', user.id), {
                 role: 'student',
                 approved: false,
                 updatedAt: serverTimestamp(),
               })
+              batch.set(doc(db, 'tutorProfiles', user.id), {
+                ...createPublicTutorProfile(user.id, user, false),
+                updatedAt: serverTimestamp(),
+              }, { merge: true })
+              await batch.commit()
               setAllUsers((curr) =>
                 curr.map((u) => (u.id === user.id ? { ...u, role: 'student', approved: false } : u))
               )
               showToast('Application declined.', 'neutral')
             } catch (error) {
-              Alert.alert('Decline not saved', error.message || 'Unable to update this application.')
+              console.error('Unable to update tutor application:', error)
+              showAlert('Application not updated', 'We couldn’t update this application. Please try again.')
             } finally {
               setBusyFlag(user.id, false)
             }
@@ -489,12 +505,10 @@ export default function AdminPanel() {
         ? '\n\nThis account will lose its admin role.'
         : ''
 
-    // Small delay so the sheet finishes closing before the native alert opens.
-    setTimeout(() => {
-      Alert.alert(
-        'Change role',
-        `Change ${user.displayName || user.email || 'this account'} to ${newRole}?${warning}`,
-        [
+    showAlert(
+      'Change account role?',
+      `Change ${user.displayName || user.email || 'this account'} to ${newRole}?${warning}`,
+      [
           { text: 'Cancel', style: 'cancel' },
           {
             text: 'Change role',
@@ -503,25 +517,33 @@ export default function AdminPanel() {
               setBusyFlag(user.id, true)
               try {
                 const approved = newRole === 'tutor'
-                await updateDoc(doc(db, 'users', user.id), {
+                const batch = writeBatch(db)
+                batch.update(doc(db, 'users', user.id), {
                   role: newRole,
                   approved,
                   updatedAt: serverTimestamp(),
                 })
+                if (user.role === 'tutor' || newRole === 'tutor') {
+                  batch.set(doc(db, 'tutorProfiles', user.id), {
+                    ...createPublicTutorProfile(user.id, user, approved),
+                    updatedAt: serverTimestamp(),
+                  }, { merge: true })
+                }
+                await batch.commit()
                 setAllUsers((curr) =>
                   curr.map((u) => (u.id === user.id ? { ...u, role: newRole, approved } : u))
                 )
                 showToast(`Role changed to ${newRole}.`)
               } catch (error) {
-                Alert.alert('Role not changed', error.message || 'Unable to update this account.')
+                console.error('Unable to change account role:', error)
+                showAlert('Role not changed', 'We couldn’t update this account’s role. Please try again.')
               } finally {
                 setBusyFlag(user.id, false)
               }
             },
           },
-        ]
-      )
-    }, 250)
+      ]
+    )
   }
 
   /* ------------------------------ UI ------------------------------ */

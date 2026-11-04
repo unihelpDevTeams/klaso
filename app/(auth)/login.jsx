@@ -4,7 +4,6 @@ import { signInWithEmailAndPassword } from 'firebase/auth'
 import React, { useState } from 'react'
 import {
   ActivityIndicator,
-  Alert,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -18,12 +17,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth } from '../../firebase/config'
 import { useTheme } from '../../context/ThemeContext'
+import { useAppDialog } from '../../context/AppDialogContext'
 import Header from '../components/header'
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 export default function Login() {
   const { colors, isDark } = useTheme()
+  const showAlert = useAppDialog()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
@@ -55,10 +56,10 @@ export default function Login() {
       console.log('Login error:', error)
       const message =
         error.code === 'auth/invalid-credential' || error.code === 'auth/user-not-found'
-          ? 'Incorrect email address or password. Please try again.'
+          ? 'The email address or password doesn’t match an account. Check your details and try again.'
           : error.code === 'auth/too-many-requests'
-          ? 'Too many failed attempts. Please wait a moment.'
-          : error.message || 'Unable to log in right now. Please try again.'
+          ? 'For your security, please wait a moment before trying again.'
+          : 'We couldn’t log in right now. Please try again.'
       setErrors({ form: message })
     } finally {
       setLoading(false)
@@ -66,10 +67,10 @@ export default function Login() {
   }
 
   const handleSocialLogin = (provider) => {
-    Alert.alert(
-      `${provider} Sign In`,
-      `For development and production build, native ${provider} OAuth credentials are used. For now, you can sign in directly with your email and password.`,
-      [{ text: 'OK' }]
+    showAlert(
+      `${provider} sign-in`,
+      `${provider} sign-in is not available yet. You can sign in with your email and password.`,
+      [{ text: 'Got it' }]
     )
   }
 

@@ -5,6 +5,7 @@ import { onIdTokenChanged } from 'firebase/auth'
 import React, { useEffect, useState } from 'react'
 import { auth } from '../firebase/config'
 import { ThemeProvider, useTheme } from '../context/ThemeContext'
+import { AppDialogProvider } from '../context/AppDialogContext'
 
 SplashScreen.preventAutoHideAsync().catch((error) => {
   console.error('Unable to keep the native splash screen visible:', error)
@@ -62,7 +63,9 @@ function RootNavigator() {
 export default function RootLayout() {
   return (
     <ThemeProvider>
-      <RootNavigator />
+      <AppDialogProvider>
+        <RootNavigator />
+      </AppDialogProvider>
     </ThemeProvider>
   )
 }

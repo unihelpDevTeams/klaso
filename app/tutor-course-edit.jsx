@@ -4,7 +4,6 @@ import { deleteField, doc, getDoc, serverTimestamp, writeBatch } from 'firebase/
 import React, { useEffect, useState } from 'react'
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StatusBar,
@@ -17,6 +16,7 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import Header from './components/header'
 import { auth, db } from '../firebase/config'
 import { useTheme } from '../context/ThemeContext'
+import { useAppDialog } from '../context/AppDialogContext'
 import { deleteTutorTutorial } from '../services/tutorialService'
 
 export default function TutorCourseEditScreen() {
@@ -24,6 +24,7 @@ export default function TutorCourseEditScreen() {
   const { id } = useLocalSearchParams()
   const courseId = typeof id === 'string' ? id : ''
   const { colors, isDark } = useTheme()
+  const showAlert = useAppDialog()
   const [form, setForm] = useState({
     title: '',
     description: '',
@@ -136,11 +137,12 @@ export default function TutorCourseEditScreen() {
       }
 
       await batch.commit()
-      Alert.alert('Tutorial updated', 'Your changes have been saved.')
-      router.back()
+      showAlert('Tutorial updated', 'Your changes have been saved.', [
+        { text: 'Done', onPress: () => router.back() },
+      ])
     } catch (saveError) {
       console.error('Unable to save tutorial changes:', saveError)
-      setError(saveError.message || 'Unable to save changes. Please try again.')
+      setError('We couldn’t save your changes. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -149,9 +151,9 @@ export default function TutorCourseEditScreen() {
   const confirmDeleteTutorial = () => {
     if (!courseLoaded || saving || deleting) return
 
-    Alert.alert(
+    showAlert(
       'Delete tutorial?',
-      'This permanently removes the tutorial, its lessons, and their Cloudflare R2 media. Tutorials with a purchase cannot be deleted.',
+      'This will permanently remove the tutorial and its lessons. This action can’t be undone. Tutorials with a purchase can’t be deleted.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -162,14 +164,14 @@ export default function TutorCourseEditScreen() {
             setError('')
             try {
               const result = await deleteTutorTutorial(courseId)
-              Alert.alert(
+              showAlert(
                 'Tutorial deleted',
-                `Tutorial removed. ${result.deletedMediaCount} media file${result.deletedMediaCount === 1 ? '' : 's'} deleted from Cloudflare R2.`
+                `The tutorial was removed. ${result.deletedMediaCount} media file${result.deletedMediaCount === 1 ? '' : 's'} were also removed.`,
+                [{ text: 'Done', onPress: () => router.back() }]
               )
-              router.back()
             } catch (deleteError) {
               console.error('Unable to delete tutorial:', deleteError)
-              setError(deleteError.message || 'Unable to delete this tutorial. Please try again.')
+              setError('We couldn’t delete this tutorial. Please try again.')
             } finally {
               setDeleting(false)
             }

@@ -4,7 +4,6 @@ import { doc, getDoc, serverTimestamp, updateDoc } from 'firebase/firestore'
 import React, { useState } from 'react'
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   StatusBar,
@@ -16,6 +15,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../firebase/config'
 import { useTheme } from '../context/ThemeContext'
+import { useAppDialog } from '../context/AppDialogContext'
 
 const applicationSteps = [
   'Complete your teaching profile',
@@ -26,6 +26,7 @@ const applicationSteps = [
 export default function BecomeTutorScreen() {
   const router = useRouter()
   const { colors, isDark } = useTheme()
+  const showAlert = useAppDialog()
 
   const [subject, setSubject] = useState('')
   const [education, setEducation] = useState('')
@@ -58,20 +59,22 @@ export default function BecomeTutorScreen() {
       const userRef = doc(db, 'users', auth.currentUser.uid)
       const profileSnapshot = await getDoc(userRef)
       if (!profileSnapshot.exists()) {
-        throw new Error('Your account profile could not be found. Sign out and sign in again, then retry.')
+        throw new Error('We couldn’t find your account profile. Please sign in again and retry.')
       }
 
       const existingProfile = profileSnapshot.data()
       if (existingProfile.role === 'tutor') {
-        Alert.alert(
-          'Application Already Submitted',
-          existingProfile.approved ? 'Your tutor profile is already active.' : 'Your application is already under review.',
-          [{ text: 'OK', onPress: () => router.replace('/(tabs)/profile') }]
+        showAlert(
+          existingProfile.approved ? 'Tutor profile active' : 'Application in review',
+          existingProfile.approved
+            ? 'Your tutor profile is active and visible to learners.'
+            : 'Your application is being reviewed. You can check its status on your profile.',
+          [{ text: 'View profile', onPress: () => router.replace('/(tabs)/profile') }]
         )
         return
       }
       if (existingProfile.role && existingProfile.role !== 'student') {
-        throw new Error('Only student accounts can submit a tutor application.')
+        throw new Error('This account can’t submit a tutor application.')
       }
 
       await updateDoc(userRef, {
@@ -85,14 +88,14 @@ export default function BecomeTutorScreen() {
         updatedAt: serverTimestamp(),
       })
 
-      Alert.alert(
+      showAlert(
         'Application submitted',
         'Your profile is now awaiting administrator review. You can check its status on your profile.',
-        [{ text: 'OK', onPress: () => router.replace('/(tabs)/profile') }]
+        [{ text: 'View profile', onPress: () => router.replace('/(tabs)/profile') }]
       )
     } catch (err) {
-      console.log('Error submitting tutor application:', err)
-      setSubmitError(err.message || 'Unable to submit your application. Please try again.')
+      console.error('Unable to submit tutor application:', err)
+      setSubmitError('We couldn’t submit your application. Please try again.')
     } finally {
       setSubmitting(false)
     }

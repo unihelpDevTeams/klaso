@@ -16,7 +16,6 @@ import {
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
-  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -32,6 +31,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../../firebase/config'
 import { useTheme } from '../../context/ThemeContext'
+import { useAppDialog } from '../../context/AppDialogContext'
 import { checkTutorialPurchase } from '../../services/paymentService'
 
 const PREVIEW_SECONDS = 30
@@ -87,6 +87,7 @@ function sortLessons(list) {
 
 export default function LessonDetailScreen() {
   const router = useRouter()
+  const showAlert = useAppDialog()
   const params = useLocalSearchParams()
   const requestedCourseId = firstParam(params.lessonId) || firstParam(params.courseId)
   const selectedVideoUrl = typeof firstParam(params.videoUrl) === 'string' ? firstParam(params.videoUrl) : null
@@ -284,7 +285,7 @@ export default function LessonDetailScreen() {
       })
     } catch (error) {
       console.log('Error updating lesson progress:', error)
-      Alert.alert('Progress not saved', 'We could not update your progress. Please try again.')
+      showAlert('Progress not saved', 'We couldn’t update your progress. Please try again.')
     } finally {
       setSavingKey(null)
     }
@@ -335,7 +336,7 @@ export default function LessonDetailScreen() {
 
   function togglePlayback() {
     if (!videoSource) {
-      Alert.alert('Video unavailable', 'This lesson does not have an uploaded video yet.')
+      showAlert('Video not available', 'A video hasn’t been added to this lesson yet.')
       return
     }
     if (purchaseStatus.checking) return
@@ -353,7 +354,7 @@ export default function LessonDetailScreen() {
       return
     }
     if (!lesson.videoUrl) {
-      Alert.alert('Video unavailable', 'This lesson does not have an uploaded video yet.')
+      showAlert('Video not available', 'A video hasn’t been added to this lesson yet.')
       return
     }
     autoPlay.current = !purchaseStatus.checking
@@ -585,7 +586,12 @@ export default function LessonDetailScreen() {
                 )}
               </>
             ) : (
-              <>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Play lesson"
+                onPress={togglePlayback}
+                style={styles.thumbnailPressable}
+              >
                 {thumbnail ? (
                   <Image source={{ uri: thumbnail }} style={styles.fill} resizeMode="cover" />
                 ) : (
@@ -593,12 +599,7 @@ export default function LessonDetailScreen() {
                     <Ionicons name="play-circle-outline" size={40} color="#6B7280" />
                   </View>
                 )}
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel="Play lesson"
-                  onPress={togglePlayback}
-                  style={styles.stageTap}
-                >
+                <View style={styles.stageTap} pointerEvents="none">
                   <View style={[styles.playBadge, { backgroundColor: colors.primary }]}>
                     {purchaseStatus.checking ? (
                       <ActivityIndicator color="#FFFFFF" />
@@ -606,13 +607,13 @@ export default function LessonDetailScreen() {
                       <Ionicons name="play" size={24} color="#FFFFFF" style={styles.playIcon} />
                     )}
                   </View>
-                </Pressable>
+                </View>
                 {!!displayDuration && (
-                  <View style={styles.durationTag}>
+                  <View style={styles.durationTag} pointerEvents="none">
                     <Text style={styles.durationText}>{displayDuration}</Text>
                   </View>
                 )}
-              </>
+              </Pressable>
             )}
 
             {!hasFullAccess && showVideo && !previewLocked && (
@@ -1096,6 +1097,9 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     overflow: 'hidden',
     width: '100%',
+  },
+  thumbnailPressable: {
+    ...StyleSheet.absoluteFillObject,
   },
   stageTap: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
   thumbFallback: { alignItems: 'center', backgroundColor: '#111827', justifyContent: 'center' },

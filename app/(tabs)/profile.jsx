@@ -4,7 +4,6 @@ import { onIdTokenChanged, reload, sendEmailVerification, signOut } from 'fireba
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore'
 import React, { useEffect, useState } from 'react'
 import {
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -17,11 +16,13 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { auth, db } from '../../firebase/config'
 import { verifyAdminAccess } from '../../firebase/adminAccess'
 import { useTheme } from '../../context/ThemeContext'
+import { useAppDialog } from '../../context/AppDialogContext'
 import Header from '../components/header'
 
 export default function Profile() {
   const router = useRouter()
   const { colors, isDark, themePreference, setThemePreference } = useTheme()
+  const showAlert = useAppDialog()
   const [userProfile, setUserProfile] = useState(null)
   const [enrollmentCount, setEnrollmentCount] = useState(0)
   const [isConfiguredAdmin, setIsConfiguredAdmin] = useState(false)
@@ -65,7 +66,7 @@ export default function Profile() {
           if (currentChangeId === authChangeId) {
             setIsConfiguredAdmin(false)
             setAdminEmailVerificationRequired(false)
-            setAdminVerificationMessage(error.message || 'Unable to verify admin access.')
+            setAdminVerificationMessage('We couldn’t verify administrator access. Please try again.')
           }
         })
 
@@ -109,11 +110,11 @@ export default function Profile() {
       setIsConfiguredAdmin(isAdmin)
       setAdminEmailVerificationRequired(emailVerificationRequired)
       if (!isAdmin && !emailVerificationRequired) {
-        setAdminVerificationMessage('This account is not listed as an admin in the backend ADMIN_EMAILS setting.')
+        setAdminVerificationMessage('This account doesn’t have administrator access. Contact support if you believe this is incorrect.')
       }
     } catch (error) {
       console.error('Unable to refresh admin access:', error)
-      setAdminVerificationMessage(error.message || 'Unable to refresh admin access.')
+      setAdminVerificationMessage('We couldn’t refresh administrator access. Please try again.')
     } finally {
       setRefreshingAdminAccess(false)
     }
@@ -130,14 +131,14 @@ export default function Profile() {
       setAdminVerificationMessage('Verification email sent. Check your inbox and spam folder.')
     } catch (error) {
       console.error('Unable to resend admin email verification:', error)
-      setAdminVerificationMessage(error.message || 'Unable to send the verification email.')
+      setAdminVerificationMessage('We couldn’t send the verification email. Please try again.')
     } finally {
       setResendingAdminVerification(false)
     }
   }
 
   const handleLogout = async () => {
-    Alert.alert('Log Out', 'Are you sure you want to log out of your Klaso account?', [
+    showAlert('Log out?', 'Are you sure you want to log out of your Klaso account?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Log Out',
@@ -147,7 +148,8 @@ export default function Profile() {
             await signOut(auth)
             router.replace('/(auth)/login')
           } catch (error) {
-            console.log('Failed to sign out', error)
+            console.error('Unable to sign out:', error)
+            showAlert('Couldn’t log out', 'Please try again in a moment.')
           }
         },
       },
@@ -702,9 +704,9 @@ export default function Profile() {
           <Pressable
             style={[styles.menuRow, { borderBottomColor: 'transparent' }]}
             onPress={() =>
-              Alert.alert(
+              showAlert(
                 'Help & Support',
-                'Contact Klaso Support Team:\n\nEmail: support@klaso.edu.ng\nWhatsApp: +234 810 000 0000'
+                'Our support team is here to help. Email support@klaso.edu.ng for assistance.'
               )
             }
           >

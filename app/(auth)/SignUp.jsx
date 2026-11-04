@@ -138,7 +138,7 @@ function mapAuthError(error) {
     case 'auth/too-many-requests':
       return 'Too many attempts. Please wait a moment and try again.'
     default:
-      return error?.message || 'We could not create your account. Please try again.'
+      return 'We couldn’t create your account. Please try again.'
   }
 }
 

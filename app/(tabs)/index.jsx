@@ -407,7 +407,7 @@ export default function Home() {
       })
     } catch (loadError) {
       console.error('Unable to load tutor dashboard:', loadError)
-      setTutorError(loadError.message || 'We couldn’t load your tutorial insights. Pull down to try again.')
+      setTutorError('We couldn’t load your tutorial insights. Pull down to try again.')
     } finally {
       setTutorLoading(false)
     }
@@ -813,6 +813,14 @@ export default function Home() {
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Pressable
                 accessibilityRole="button"
+                accessibilityLabel="Open messages"
+                onPress={() => router.push('/messages')}
+                style={[styles.tutorHeaderAction, { backgroundColor: colors.inputBg }]}
+              >
+                <Ionicons name="chatbubbles-outline" size={20} color={colors.text} />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
                 accessibilityLabel="Open wallet"
                 onPress={() => router.push('/wallet')}
                 style={[styles.tutorHeaderAction, { backgroundColor: colors.primaryLight }]}
@@ -845,6 +853,9 @@ export default function Home() {
           ListHeaderComponent={
             <View>
               <View style={[styles.tutorWelcomeCard, { backgroundColor: colors.primaryDark }]}>
+                <View style={styles.tutorWelcomeIcon}>
+                  <Ionicons name="person" size={30} color="#FFFFFF" />
+              </View>
                 <View style={{ flex: 1 }}>
                   <Text style={styles.tutorWelcomeEyebrow}>{getGreeting()}</Text>
                   <Text style={styles.tutorWelcomeTitle}>
@@ -854,9 +865,7 @@ export default function Home() {
                     Your teaching workspace, all in one place.
                   </Text>
                 </View>
-                <View style={styles.tutorWelcomeIcon}>
-                  <Ionicons name="school-outline" size={30} color="#FFFFFF" />
-                </View>
+
               </View>
 
               <View style={styles.tutorInsightsRow}>
@@ -1004,6 +1013,7 @@ export default function Home() {
       <Header
         showLogo
         showSearch
+        showMessages
         showNotifications
         searchMode={showSearch}
         searchValue={searchQuery}
@@ -1013,6 +1023,7 @@ export default function Home() {
           setSearchQuery('')
         }}
         onSearchPress={() => setShowSearch(true)}
+        onMessagesPress={() => router.push('/messages')}
         onNotificationPress={() => router.push('/notifications')}
         searchPlaceholder="Search courses, tutors, topics"
       />
@@ -1083,7 +1094,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     height: 48,
     justifyContent: 'center',
-    marginLeft: 12,
+    marginRight: 12,
     width: 48,
   },
   tutorInsightsRow: { flexDirection: 'row', gap: 9, marginTop: 14 },

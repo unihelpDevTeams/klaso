@@ -3,11 +3,10 @@ import { File } from 'expo-file-system'
 import * as ImagePicker from 'expo-image-picker'
 import { router, useNavigation } from 'expo-router'
 import { onIdTokenChanged } from 'firebase/auth'
-import { collection, doc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore'
+import { collection, doc, getDoc, onSnapshot, serverTimestamp, writeBatch } from 'firebase/firestore'
 import React, { forwardRef, useEffect, useMemo, useRef, useState } from 'react'
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -24,6 +23,8 @@ import {
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 import { auth, db } from '../firebase/config'
 import { useTheme } from '../context/ThemeContext'
+import { useAppDialog } from '../context/AppDialogContext'
+import { createPublicTutorProfile } from '../services/tutorProfileService'
 
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'http://localhost:3000'
 const OTHER = 'Other'
@@ -139,6 +140,7 @@ function friendlyError(error) {
 
 export default function UploadScreen() {
   const { colors, isDark } = useTheme()
+  const showAlert = useAppDialog()
   const navigation = useNavigation()
 
   const [access, setAccess] = useState('checking') // checking | allowed | pending | denied
@@ -204,14 +206,14 @@ export default function UploadScreen() {
 
       if (loading) {
         event.preventDefault()
-        Alert.alert('Upload in progress', 'Please wait until the lesson has finished publishing.')
+        showAlert('Publishing in progress', 'Please wait for the lesson to finish publishing before leaving.')
         return
       }
 
       if (!dirty) return
 
       event.preventDefault()
-      Alert.alert('Discard this lesson?', 'The details and files you selected will be lost.', [
+      showAlert('Discard this lesson?', 'Your lesson details and selected files will be lost.', [
         { text: 'Keep editing', style: 'cancel' },
         {
           text: 'Discard',
@@ -221,7 +223,7 @@ export default function UploadScreen() {
       ])
     })
     return unsubscribe
-  }, [navigation, dirty, loading])
+  }, [navigation, dirty, loading, showAlert])
 
   /* ----------------------------- form ------------------------------ */
 
@@ -357,9 +359,15 @@ export default function UploadScreen() {
       }
 
       setStage('publish')
+      const profileSnapshot = await getDoc(doc(db, 'users', user.uid))
+      if (!profileSnapshot.exists()) {
+        throw new Error('Your tutor profile could not be loaded.')
+      }
+      const tutorProfile = createPublicTutorProfile(user.uid, profileSnapshot.data(), true)
       const batch = writeBatch(db)
       const courseRef = doc(collection(db, 'courses'))
       const lessonRef = doc(collection(db, 'lessons'))
+      const tutorProfileRef = doc(db, 'tutorProfiles', user.uid)
 
       batch.set(courseRef, {
         title,
@@ -373,6 +381,7 @@ export default function UploadScreen() {
         videoUrl: uploadedVideo.url,
         videoKey: uploadedVideo.key,
         tutor: {
+          uid: user.uid,
           name: user.displayName || '',
           ...(user.photoURL ? { avatar: user.photoURL } : {}),
         },
@@ -382,6 +391,11 @@ export default function UploadScreen() {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       })
+
+      batch.set(tutorProfileRef, {
+        ...tutorProfile,
+        updatedAt: serverTimestamp(),
+      }, { merge: true })
 
       batch.set(lessonRef, {
         title,

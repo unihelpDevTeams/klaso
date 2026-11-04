@@ -1,6 +1,13 @@
 import Ionicons from '@expo/vector-icons/Ionicons'
 import { useLocalSearchParams, useRouter } from 'expo-router'
-import { addDoc, collection, onSnapshot, serverTimestamp } from 'firebase/firestore'
+import {
+  addDoc,
+  collection,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  where,
+} from 'firebase/firestore'
 import React, { useEffect, useMemo, useState } from 'react'
 import {
   ActivityIndicator,
@@ -40,28 +47,46 @@ export default function ChatScreen() {
   useEffect(() => {
     if (!auth.currentUser || !tutorId) return undefined
 
-    const unsubscribe = onSnapshot(collection(db, 'messages'), (snapshot) => {
-      const currentUserId = auth.currentUser.uid
-      const filtered = snapshot.docs
-        .map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
-        .filter((message) => {
-          const sender = message.senderId
-          const recipient = message.recipientId
-          return (
-            (sender === currentUserId && recipient === tutorId) ||
-            (sender === tutorId && recipient === currentUserId)
-          )
-        })
-        .sort((a, b) => {
-          const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0
-          const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0
-          return timeA - timeB
-        })
+    const currentUserId = auth.currentUser.uid
+    let sentMessages = []
+    let receivedMessages = []
+    const updateMessages = () => {
+      setMessages([...sentMessages, ...receivedMessages].sort((a, b) => {
+        const timeA = a.createdAt?.toMillis ? a.createdAt.toMillis() : 0
+        const timeB = b.createdAt?.toMillis ? b.createdAt.toMillis() : 0
+        return timeA - timeB
+      }))
+    }
 
-      setMessages(filtered)
-    })
+    const unsubscribeSent = onSnapshot(
+      query(
+        collection(db, 'messages'),
+        where('senderId', '==', currentUserId),
+        where('recipientId', '==', tutorId)
+      ),
+      (snapshot) => {
+        sentMessages = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+        updateMessages()
+      },
+      (error) => console.error('Unable to load sent messages:', error)
+    )
+    const unsubscribeReceived = onSnapshot(
+      query(
+        collection(db, 'messages'),
+        where('senderId', '==', tutorId),
+        where('recipientId', '==', currentUserId)
+      ),
+      (snapshot) => {
+        receivedMessages = snapshot.docs.map((docSnap) => ({ id: docSnap.id, ...docSnap.data() }))
+        updateMessages()
+      },
+      (error) => console.error('Unable to load received messages:', error)
+    )
 
-    return () => unsubscribe()
+    return () => {
+      unsubscribeSent()
+      unsubscribeReceived()
+    }
   }, [tutorId])
 
   const headerTitle = useMemo(() => {
@@ -191,6 +216,7 @@ export default function ChatScreen() {
             onChangeText={setMessageText}
             placeholder="Write a message..."
             placeholderTextColor={colors.textMuted}
+            maxLength={2000}
             multiline
             style={[
               styles.input,

@@ -33,7 +33,7 @@ export default function WalletScreen() {
       setTransactions(transactionData)
     } catch (loadError) {
       console.error('Unable to load wallet:', loadError)
-      setError(loadError.message || 'We could not load your wallet right now.')
+      setError('We couldn’t load your wallet right now. Please try again.')
     } finally {
       setLoading(false)
       setRefreshing(false)

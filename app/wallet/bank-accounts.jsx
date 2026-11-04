@@ -1,13 +1,15 @@
 import { useCallback, useRef, useState } from 'react'
-import { ActivityIndicator, Alert, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useTheme } from '../../context/ThemeContext'
+import { useAppDialog } from '../../context/AppDialogContext'
 import { deleteBankAccount, getBankAccounts, getBankList, resolveBankAccount, saveBankAccount, setDefaultBankAccount } from '../../services/walletService'
 
 export default function BankAccountsScreen() {
   const { colors } = useTheme()
+  const showAlert = useAppDialog()
   const [accounts, setAccounts] = useState([])
   const [banks, setBanks] = useState([])
   const [bankName, setBankName] = useState('')
@@ -41,13 +43,15 @@ export default function BankAccountsScreen() {
           setBanks(bankResult.value)
           setBankListError('')
         } else {
-          setBankListError(bankResult.reason?.message || 'Unable to load the bank list.')
+          console.error('Unable to load bank list:', bankResult.reason)
+          setBankListError('We couldn’t load the bank list. Please try again.')
         }
 
         if (accountResult.status === 'fulfilled') {
           setAccounts(accountResult.value)
         } else {
-          Alert.alert('Bank accounts', accountResult.reason?.message || 'Unable to load saved accounts.')
+          console.error('Unable to load saved bank accounts:', accountResult.reason)
+          showAlert('Accounts not available', 'We couldn’t load your saved bank accounts. Please try again.')
         }
       } finally {
         setLoading(false)
@@ -60,7 +64,7 @@ export default function BankAccountsScreen() {
     } finally {
       loadRequestRef.current = null
     }
-  }, [])
+  }, [showAlert])
 
   useFocusEffect(
     useCallback(() => {
@@ -70,7 +74,7 @@ export default function BankAccountsScreen() {
 
   const handleSave = async () => {
     if (!bankCode || !bankName || !accountNumber || !accountVerified || !accountName) {
-      Alert.alert('Bank account', 'Choose a bank and verify the account number before saving.')
+      showAlert('Complete account details', 'Choose a bank and verify the account number before saving.')
       return
     }
 
@@ -87,9 +91,10 @@ export default function BankAccountsScreen() {
       setAccountName('')
       setAccountVerified(false)
       await loadData()
-      Alert.alert('Bank account', 'Your bank account has been saved successfully.')
+      showAlert('Bank account saved', 'Your bank account is ready to use for payouts.')
     } catch (error) {
-      Alert.alert('Bank account', error.message || 'Unable to save bank account.')
+      console.error('Unable to save bank account:', error)
+      showAlert('Account not saved', 'We couldn’t save this bank account. Please try again.')
     } finally {
       setSaving(false)
     }
@@ -97,7 +102,7 @@ export default function BankAccountsScreen() {
 
   const handleVerifyAccount = async () => {
     if (!bankCode || !/^\d{10}$/.test(accountNumber)) {
-      Alert.alert('Verify account', 'Select a bank and enter a valid 10-digit account number.')
+      showAlert('Check account details', 'Select a bank and enter a valid 10-digit account number.')
       return
     }
 
@@ -107,12 +112,13 @@ export default function BankAccountsScreen() {
     try {
       const result = await resolveBankAccount({ bankCode, accountNumber })
       if (!result.resolved || !result.accountName) {
-        throw new Error('Flutterwave could not verify the account holder name.')
+        throw new Error('Account holder details could not be verified.')
       }
       setAccountName(result.accountName)
       setAccountVerified(true)
     } catch (error) {
-      Alert.alert('Verify account', error.message || 'Unable to verify this bank account.')
+      console.error('Unable to verify bank account:', error)
+      showAlert('Account couldn’t be verified', 'Check the bank and account number, then try again.')
     } finally {
       setVerifying(false)
     }
@@ -133,14 +139,15 @@ export default function BankAccountsScreen() {
       await setDefaultBankAccount(accountId)
       await loadData()
     } catch (error) {
-      Alert.alert('Bank account', error.message || 'Unable to set default account.')
+      console.error('Unable to set default bank account:', error)
+      showAlert('Default account not changed', 'We couldn’t update your default bank account. Please try again.')
     } finally {
       setAccountActionId('')
     }
   }
 
   const handleDelete = async (accountId) => {
-    Alert.alert('Remove bank account', 'Do you want to remove this bank account?', [
+    showAlert('Remove bank account?', 'This account will no longer be available for payouts.', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Remove',
@@ -152,7 +159,8 @@ export default function BankAccountsScreen() {
             await deleteBankAccount(accountId)
             await loadData()
           } catch (error) {
-            Alert.alert('Bank account', error.message || 'Unable to remove this bank account.')
+            console.error('Unable to remove bank account:', error)
+            showAlert('Account not removed', 'We couldn’t remove this bank account. Please try again.')
           } finally {
             setAccountActionId('')
           }

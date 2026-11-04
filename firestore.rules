@@ -32,6 +32,37 @@ service cloud.firestore {
         && get(enrollmentPath).data.status == 'active';
     }
 
+    function isValidTutorProfile(userId) {
+      let data = request.resource.data;
+      return data.keys().hasOnly([
+          'uid', 'name', 'photoURL', 'bio', 'subject', 'education', 'experience',
+          'hourlyRate', 'rating', 'reviewsCount', 'approved', 'updatedAt'
+        ])
+        && data.keys().hasAll([
+          'uid', 'name', 'photoURL', 'bio', 'subject', 'education', 'experience',
+          'hourlyRate', 'rating', 'reviewsCount', 'approved', 'updatedAt'
+        ])
+        && data.uid == userId
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 80
+        && data.photoURL is string
+        && data.photoURL.size() <= 2048
+        && data.bio is string
+        && data.bio.size() <= 2000
+        && data.subject is string
+        && data.subject.size() <= 120
+        && data.education is string
+        && data.education.size() <= 300
+        && data.experience is string
+        && data.experience.size() <= 300
+        && (data.hourlyRate == null || data.hourlyRate is number)
+        && (data.rating == null || data.rating is number)
+        && (data.reviewsCount == null || data.reviewsCount is number)
+        && data.approved is bool
+        && data.updatedAt is timestamp;
+    }
+
     match /users/{userId} {
       allow create: if isSignedIn()
         && request.auth.uid == userId
@@ -53,6 +84,22 @@ service cloud.firestore {
           && (request.resource.data.get('approved', false) != true
             || resource.data.get('approved', false) == true));
       allow delete: if false;
+    }
+
+    match /tutorProfiles/{userId} {
+      allow read: if resource.data.approved == true;
+      allow create: if (isAdmin() && isValidTutorProfile(userId))
+        || (isOwner(userId)
+          && isApprovedTutor()
+          && request.resource.data.approved == true
+          && isValidTutorProfile(userId));
+      allow update: if (isAdmin() && isValidTutorProfile(userId))
+        || (isOwner(userId)
+          && isApprovedTutor()
+          && resource.data.approved == true
+          && request.resource.data.approved == true
+          && isValidTutorProfile(userId));
+      allow delete: if isAdmin();
     }
 
     match /lessons/{lessonId} {
@@ -122,6 +169,31 @@ service cloud.firestore {
     match /bookings/{bookingId} {
       allow read: if isAdmin()
         || (isSignedIn() && request.auth.uid == resource.data.userId);
+    }
+
+    match /messages/{messageId} {
+      allow read: if isSignedIn()
+        && (resource.data.senderId == request.auth.uid
+          || resource.data.recipientId == request.auth.uid);
+      allow create: if isSignedIn()
+        && request.resource.data.keys().hasOnly([
+          'senderId', 'senderName', 'recipientId', 'recipientName', 'text', 'createdAt'
+        ])
+        && request.resource.data.keys().hasAll([
+          'senderId', 'senderName', 'recipientId', 'recipientName', 'text', 'createdAt'
+        ])
+        && request.resource.data.senderId == request.auth.uid
+        && request.resource.data.recipientId is string
+        && request.resource.data.recipientId != request.auth.uid
+        && request.resource.data.senderName is string
+        && request.resource.data.senderName.size() <= 80
+        && request.resource.data.recipientName is string
+        && request.resource.data.recipientName.size() <= 80
+        && request.resource.data.text is string
+        && request.resource.data.text.size() > 0
+        && request.resource.data.text.size() <= 2000
+        && request.resource.data.createdAt is timestamp;
+      allow update, delete: if false;
     }
 
     match /{document=**} {

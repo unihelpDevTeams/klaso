@@ -1,9 +1,10 @@
 import { useCallback, useState } from 'react'
-import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native'
 import { router, useFocusEffect } from 'expo-router'
 import { Ionicons } from '@expo/vector-icons'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { useTheme } from '../../context/ThemeContext'
+import { useAppDialog } from '../../context/AppDialogContext'
 import { getBankAccounts, getTutorWallet, requestWithdrawal } from '../../services/walletService'
 
 const formatCurrency = (value) => {
@@ -13,6 +14,7 @@ const formatCurrency = (value) => {
 
 export default function WithdrawScreen() {
   const { colors } = useTheme()
+  const showAlert = useAppDialog()
   const [wallet, setWallet] = useState({ availableBalance: 0 })
   const [accounts, setAccounts] = useState([])
   const [amount, setAmount] = useState('')
@@ -29,11 +31,12 @@ export default function WithdrawScreen() {
       const defaultAccount = accountData.find((account) => account.isDefault) || accountData[0]
       if (defaultAccount) setSelectedAccount(defaultAccount.id)
     } catch (error) {
-      Alert.alert('Withdrawal', error.message || 'Unable to load withdrawal details.')
+      console.error('Unable to load withdrawal details:', error)
+      showAlert('Withdrawal details unavailable', 'We couldn’t load your payout information. Please try again.')
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [showAlert])
 
   useFocusEffect(
     useCallback(() => {
@@ -44,29 +47,31 @@ export default function WithdrawScreen() {
   const handleSubmit = async () => {
     const numericAmount = Number(amount)
     if (!selectedAccount) {
-      Alert.alert('Withdrawal', 'Add and select a bank account before requesting a payout.')
+      showAlert('Select a bank account', 'Add and select a bank account before requesting a payout.')
       return
     }
 
     if (!Number.isFinite(numericAmount) || numericAmount <= 0) {
-      Alert.alert('Withdrawal', 'Enter a valid amount to withdraw.')
+      showAlert('Check withdrawal amount', 'Enter an amount greater than zero.')
       return
     }
 
     if (numericAmount > Number(wallet.availableBalance || 0)) {
-      Alert.alert('Withdrawal', 'Your available balance is lower than the requested amount.')
+      showAlert('Amount exceeds available balance', 'Enter an amount within your available balance.')
       return
     }
 
     setSubmitting(true)
     try {
       await requestWithdrawal({ amount: numericAmount, bankAccountId: selectedAccount })
-      Alert.alert('Withdrawal request sent', 'Your payout has been created and is being processed.')
       setAmount('')
       await loadData()
-      router.back()
+      showAlert('Payout requested', 'Your payout request has been received and is being processed.', [
+        { text: 'Done', onPress: () => router.back() },
+      ])
     } catch (error) {
-      Alert.alert('Withdrawal', error.message || 'Unable to process the withdrawal.')
+      console.error('Unable to process withdrawal:', error)
+      showAlert('Payout not submitted', 'We couldn’t process your request. Please try again.')
     } finally {
       setSubmitting(false)
     }

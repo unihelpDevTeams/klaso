@@ -10,6 +10,7 @@ export default function Header({
   showBack = false,
   showLogo = false,
   showSearch = false,
+  showMessages = false,
   showNotifications = false,
   searchMode = false,
   searchValue = '',
@@ -18,6 +19,7 @@ export default function Header({
   searchPlaceholder = 'Search',
   onBackPress,
   onSearchPress,
+  onMessagesPress,
   onNotificationPress,
   rightContent,
   containerStyle,
@@ -26,7 +28,7 @@ export default function Header({
   inputRef,
 }) {
   const router = useRouter()
-  const { colors, isDark } = useTheme()
+  const { colors } = useTheme()
 
   const handleBack = onBackPress || (() => router.back())
 
@@ -105,6 +107,18 @@ export default function Header({
                 hitSlop={8}
               >
                 <Ionicons name="search-outline" size={20} color={colors.text} />
+              </Pressable>
+            )}
+
+            {showMessages && (
+              <Pressable
+                onPress={onMessagesPress}
+                accessibilityRole="button"
+                accessibilityLabel="Open messages"
+                style={[styles.actionButton, { backgroundColor: colors.inputBg }]}
+                hitSlop={8}
+              >
+                <Ionicons name="chatbubbles-outline" size={20} color={colors.text} />
               </Pressable>
             )}
 
